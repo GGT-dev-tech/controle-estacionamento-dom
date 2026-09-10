@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +13,21 @@ class Settings(BaseSettings):
 
     # Banco de dados
     database_url: str = "mysql+aiomysql://dom_user:dom_pass@localhost:3306/estacionamento"
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalizar_driver_async(cls, v: str) -> str:
+        """Railway (e provedores similares) publicam DATABASE_URL sem o driver assíncrono
+        explícito (ex.: `postgres://` ou `postgresql://`, nunca `postgresql+asyncpg://`).
+        Normaliza aqui para que colar a variável do plugin funcione sem edição manual.
+        """
+        if v.startswith("postgres://"):
+            v = "postgresql://" + v[len("postgres://") :]
+        if v.startswith("postgresql://"):
+            v = "postgresql+asyncpg://" + v[len("postgresql://") :]
+        if v.startswith("mysql://"):
+            v = "mysql+aiomysql://" + v[len("mysql://") :]
+        return v
 
     # Redis
     redis_url: str = "redis://localhost:6379"

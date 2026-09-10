@@ -1,11 +1,16 @@
 import logging
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from redis import RedisError
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.database import get_db
 from app.routers import admin, movimentacoes, relatorios, reservas, vagas, webhook_whatsapp, ws
+from app.services import redis_cache
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,8 +43,26 @@ async def add_security_headers(request: Request, call_next):
 
 
 @app.get("/health", tags=["Health"])
-async def health() -> dict:
-    return {"status": "ok"}
+async def health(response: Response, db: AsyncSession = Depends(get_db)) -> dict:
+    """Checagem real de disponibilidade — usada pelo healthcheck do Railway e por
+    monitoramento externo (ex.: UptimeRobot). Retorna 503 se algum backend estiver fora."""
+    resultado = {"status": "ok", "database": "ok", "redis": "ok"}
+
+    try:
+        await db.execute(text("SELECT 1"))
+    except Exception:
+        resultado["database"] = "erro"
+        resultado["status"] = "degradado"
+
+    try:
+        await redis_cache.get_redis().ping()
+    except RedisError:
+        resultado["redis"] = "erro"
+        resultado["status"] = "degradado"
+
+    if resultado["status"] != "ok":
+        response.status_code = 503
+    return resultado
 
 
 app.include_router(vagas.router)
