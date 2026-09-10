@@ -1,0 +1,44 @@
+version: "3.9"
+
+# Evolution API local, para testes de integração WhatsApp em desenvolvimento.
+# Em produção (Railway), usar o template oficial da Evolution API — ver PROJECT_SPEC.md.
+
+services:
+  evolution-api:
+    image: atendai/evolution-api:v2.1.1
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_URL: http://localhost:8080
+      AUTHENTICATION_TYPE: apikey
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-troque-esta-chave-min-32-caracteres}
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution@evolution-postgres:5432/evolution
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379
+      WEBHOOK_GLOBAL_URL: http://host.docker.internal:8000/webhook/whatsapp
+      WEBHOOK_GLOBAL_ENABLED: "true"
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      - evolution-postgres
+      - evolution-redis
+
+  evolution-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+
+  evolution-redis:
+    image: redis:7-alpine
+    volumes:
+      - evolution_redis_data:/data
+
+volumes:
+  evolution_instances:
+  evolution_postgres_data:
+  evolution_redis_data:
