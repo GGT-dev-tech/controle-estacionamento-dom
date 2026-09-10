@@ -1,0 +1,154 @@
+from datetime import datetime
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.movimentacao import Movimentacao
+from app.models.ocupante import Ocupante
+from app.models.reserva import Reserva
+from app.models.vaga import StatusVaga, Vaga
+from app.schemas.movimentacao import EntradaCreate
+from app.schemas.reserva import ReservaCreate
+from app.services.redis_cache import invalidate_vagas_cache
+from app.services.ws_manager import notificar_vaga_atualizada
+
+
+class RecursoNaoEncontradoError(Exception):
+    """A vaga/reserva referenciada pela operação não existe (ou está inativa)."""
+
+
+class ConflitoOperacaoError(Exception):
+    """A operação viola uma regra de negócio (ex.: vaga já ocupada)."""
+
+
+async def aplicar_entrada(db: AsyncSession, payload: EntradaCreate, operador_sub: str) -> Movimentacao:
+    vaga = await db.get(Vaga, payload.vaga_id)
+    if not vaga or not vaga.ativo:
+        raise RecursoNaoEncontradoError("Vaga não encontrada.")
+    if vaga.status not in (StatusVaga.livre, StatusVaga.reservada):
+        raise ConflitoOperacaoError("Vaga não está disponível para ocupação.")
+
+    agora = datetime.utcnow()
+
+    ocupante = Ocupante(
+        vaga_id=vaga.id,
+        nome=payload.nome,
+        placa=payload.placa.upper(),
+        veiculo=payload.veiculo,
+        tipo_cliente=payload.tipo_cliente,
+        observacoes=payload.observacoes,
+        hora_entrada=agora,
+        operador_id=operador_sub,
+    )
+    db.add(ocupante)
+
+    if vaga.status == StatusVaga.reservada:
+        reservas_ativas = (
+            await db.execute(select(Reserva).where(Reserva.vaga_id == vaga.id, Reserva.status == "ativa"))
+        ).scalars().all()
+        for reserva in reservas_ativas:
+            reserva.status = "concluida"
+
+    vaga.status = StatusVaga.ocupada
+
+    movimentacao = Movimentacao(
+        vaga_id=vaga.id,
+        tipo="entrada",
+        placa=payload.placa.upper(),
+        motorista=payload.nome,
+        veiculo=payload.veiculo,
+        timestamp=agora,
+        operador_id=operador_sub,
+    )
+    db.add(movimentacao)
+
+    await db.commit()
+    await db.refresh(movimentacao)
+    await invalidate_vagas_cache()
+    await notificar_vaga_atualizada(vaga.id, vaga.status.value)
+    return movimentacao
+
+
+async def aplicar_saida(db: AsyncSession, vaga_id: str, operador_sub: str) -> Movimentacao:
+    vaga = await db.get(Vaga, vaga_id)
+    if not vaga:
+        raise RecursoNaoEncontradoError("Vaga não encontrada.")
+    if vaga.status != StatusVaga.ocupada:
+        raise ConflitoOperacaoError("Vaga não está ocupada.")
+
+    ocupante = (
+        await db.execute(select(Ocupante).where(Ocupante.vaga_id == vaga.id))
+    ).scalar_one_or_none()
+    if not ocupante:
+        raise ConflitoOperacaoError("Nenhum ocupante registrado para esta vaga.")
+
+    agora = datetime.utcnow()
+    tempo_permanencia_min = int((agora - ocupante.hora_entrada).total_seconds() // 60)
+
+    movimentacao = Movimentacao(
+        vaga_id=vaga.id,
+        tipo="saida",
+        placa=ocupante.placa,
+        motorista=ocupante.nome,
+        veiculo=ocupante.veiculo,
+        timestamp=agora,
+        operador_id=operador_sub,
+        tempo_permanencia_min=tempo_permanencia_min,
+    )
+    db.add(movimentacao)
+
+    await db.delete(ocupante)
+    vaga.status = StatusVaga.livre
+
+    await db.commit()
+    await db.refresh(movimentacao)
+    await invalidate_vagas_cache()
+    await notificar_vaga_atualizada(vaga.id, vaga.status.value)
+    return movimentacao
+
+
+async def aplicar_reserva(db: AsyncSession, payload: ReservaCreate, operador_sub: str) -> Reserva:
+    vaga = await db.get(Vaga, payload.vaga_id)
+    if not vaga or not vaga.ativo:
+        raise RecursoNaoEncontradoError("Vaga não encontrada.")
+    if vaga.status != StatusVaga.livre:
+        raise ConflitoOperacaoError("Vaga não está livre para reserva.")
+
+    reserva = Reserva(**payload.model_dump(), status="ativa", criado_em=datetime.utcnow())
+    db.add(reserva)
+    vaga.status = StatusVaga.reservada
+
+    await db.commit()
+    await db.refresh(reserva)
+    await invalidate_vagas_cache()
+    await notificar_vaga_atualizada(vaga.id, vaga.status.value)
+    return reserva
+
+
+async def aplicar_cancelamento(db: AsyncSession, reserva_id: int, operador_sub: str) -> Reserva:
+    reserva = await db.get(Reserva, reserva_id)
+    if not reserva:
+        raise RecursoNaoEncontradoError("Reserva não encontrada.")
+    if reserva.status != "ativa":
+        raise ConflitoOperacaoError("Reserva não está ativa.")
+
+    reserva.status = "cancelada"
+
+    vaga = await db.get(Vaga, reserva.vaga_id)
+    if vaga and vaga.status == StatusVaga.reservada:
+        outras_ativas = (
+            await db.execute(
+                select(Reserva).where(
+                    Reserva.vaga_id == vaga.id, Reserva.status == "ativa", Reserva.id != reserva.id
+                )
+            )
+        ).scalars().all()
+        if not outras_ativas:
+            vaga.status = StatusVaga.livre
+
+    await db.commit()
+    await db.refresh(reserva)
+    await invalidate_vagas_cache()
+    if vaga:
+        await notificar_vaga_atualizada(vaga.id, vaga.status.value)
+    return reserva

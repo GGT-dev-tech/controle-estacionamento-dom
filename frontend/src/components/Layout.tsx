@@ -1,6 +1,7 @@
 import { useAuth0 } from '@auth0/auth0-react'
 import type { ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
+import { StatusConexao } from '@/components/StatusConexao'
 import { cn } from '@/lib/utils'
 
 const NAV_LINKS = [
@@ -14,12 +15,13 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-y-2 px-4 py-4">
           <div>
             <h1 className="text-lg font-semibold">Estacionamento Dom</h1>
             <p className="text-xs text-muted-foreground">Olá, {user?.name ?? user?.email}</p>
           </div>
-          <nav className="flex items-center gap-1">
+          <nav className="flex flex-wrap items-center gap-3">
+            <StatusConexao />
             {NAV_LINKS.map((link) => (
               <NavLink
                 key={link.to}

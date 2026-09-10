@@ -1,19 +1,27 @@
-from datetime import datetime
+import logging
 
+from pydantic import ValidationError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.movimentacao import Movimentacao
-from app.models.ocupante import Ocupante
-from app.models.reserva import Reserva
-from app.models.vaga import StatusVaga, Vaga
 from app.schemas.movimentacao import EntradaCreate, MovimentacaoRead, SaidaCreate
+from app.schemas.reserva import ReservaCreate
+from app.schemas.sync import ResultadoOperacao, SincronizarRequest, SincronizarResponse
 from app.security.audit import registrar_auditoria
 from app.security.auth import get_current_user
-from app.services.redis_cache import invalidate_vagas_cache
-from app.services.ws_manager import notificar_vaga_atualizada
+from app.services.sync import (
+    ConflitoOperacaoError,
+    RecursoNaoEncontradoError,
+    aplicar_cancelamento,
+    aplicar_entrada,
+    aplicar_reserva,
+    aplicar_saida,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/movimentacoes", tags=["Movimentações"])
 
@@ -41,54 +49,15 @@ async def registrar_entrada(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ) -> Movimentacao:
-    vaga = await db.get(Vaga, payload.vaga_id)
-    if not vaga or not vaga.ativo:
-        raise HTTPException(status_code=404, detail="Vaga não encontrada.")
-    if vaga.status not in (StatusVaga.livre, StatusVaga.reservada):
-        raise HTTPException(status_code=409, detail="Vaga não está disponível para ocupação.")
+    try:
+        movimentacao = await aplicar_entrada(db, payload, user["sub"])
+    except RecursoNaoEncontradoError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConflitoOperacaoError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
-    agora = datetime.utcnow()
-
-    ocupante = Ocupante(
-        vaga_id=vaga.id,
-        nome=payload.nome,
-        placa=payload.placa.upper(),
-        veiculo=payload.veiculo,
-        tipo_cliente=payload.tipo_cliente,
-        observacoes=payload.observacoes,
-        hora_entrada=agora,
-        operador_id=user["sub"],
-    )
-    db.add(ocupante)
-
-    if vaga.status == StatusVaga.reservada:
-        reservas_ativas = (
-            await db.execute(
-                select(Reserva).where(Reserva.vaga_id == vaga.id, Reserva.status == "ativa")
-            )
-        ).scalars().all()
-        for reserva in reservas_ativas:
-            reserva.status = "concluida"
-
-    vaga.status = StatusVaga.ocupada
-
-    movimentacao = Movimentacao(
-        vaga_id=vaga.id,
-        tipo="entrada",
-        placa=payload.placa.upper(),
-        motorista=payload.nome,
-        veiculo=payload.veiculo,
-        timestamp=agora,
-        operador_id=user["sub"],
-    )
-    db.add(movimentacao)
-
-    await db.commit()
-    await db.refresh(movimentacao)
-    await invalidate_vagas_cache()
-    await notificar_vaga_atualizada(vaga.id, vaga.status.value)
     await registrar_auditoria(
-        db, user["sub"], "entrada", "vaga", vaga.id, request.client.host if request.client else None
+        db, user["sub"], "entrada", "vaga", payload.vaga_id, request.client.host if request.client else None
     )
     return movimentacao
 
@@ -100,41 +69,54 @@ async def registrar_saida(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_user),
 ) -> Movimentacao:
-    vaga = await db.get(Vaga, payload.vaga_id)
-    if not vaga:
-        raise HTTPException(status_code=404, detail="Vaga não encontrada.")
-    if vaga.status != StatusVaga.ocupada:
-        raise HTTPException(status_code=409, detail="Vaga não está ocupada.")
+    try:
+        movimentacao = await aplicar_saida(db, payload.vaga_id, user["sub"])
+    except RecursoNaoEncontradoError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConflitoOperacaoError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
-    ocupante = (
-        await db.execute(select(Ocupante).where(Ocupante.vaga_id == vaga.id))
-    ).scalar_one_or_none()
-    if not ocupante:
-        raise HTTPException(status_code=409, detail="Nenhum ocupante registrado para esta vaga.")
-
-    agora = datetime.utcnow()
-    tempo_permanencia_min = int((agora - ocupante.hora_entrada).total_seconds() // 60)
-
-    movimentacao = Movimentacao(
-        vaga_id=vaga.id,
-        tipo="saida",
-        placa=ocupante.placa,
-        motorista=ocupante.nome,
-        veiculo=ocupante.veiculo,
-        timestamp=agora,
-        operador_id=user["sub"],
-        tempo_permanencia_min=tempo_permanencia_min,
-    )
-    db.add(movimentacao)
-
-    await db.delete(ocupante)
-    vaga.status = StatusVaga.livre
-
-    await db.commit()
-    await db.refresh(movimentacao)
-    await invalidate_vagas_cache()
-    await notificar_vaga_atualizada(vaga.id, vaga.status.value)
     await registrar_auditoria(
-        db, user["sub"], "saida", "vaga", vaga.id, request.client.host if request.client else None
+        db, user["sub"], "saida", "vaga", payload.vaga_id, request.client.host if request.client else None
     )
     return movimentacao
+
+
+@router.post("/sync", response_model=SincronizarResponse)
+async def sincronizar_operacoes(
+    payload: SincronizarRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+) -> SincronizarResponse:
+    """Recebe a fila de operações pendentes gravadas offline (IndexedDB/Dexie) e as aplica em lote.
+
+    Cada item é processado de forma independente — uma falha não interrompe o restante do lote.
+    """
+    ip = request.client.host if request.client else None
+    resultados: list[ResultadoOperacao] = []
+
+    for operacao in payload.operacoes:
+        try:
+            if operacao.tipo == "entrada":
+                await aplicar_entrada(db, EntradaCreate.model_validate(operacao.payload), user["sub"])
+            elif operacao.tipo == "saida":
+                await aplicar_saida(db, str(operacao.payload["vaga_id"]), user["sub"])
+            elif operacao.tipo == "reserva":
+                await aplicar_reserva(db, ReservaCreate.model_validate(operacao.payload), user["sub"])
+            elif operacao.tipo == "cancelamento":
+                await aplicar_cancelamento(db, int(operacao.payload["reserva_id"]), user["sub"])
+
+            resultados.append(ResultadoOperacao(id=operacao.id, sucesso=True))
+            await registrar_auditoria(db, user["sub"], f"sync_{operacao.tipo}", "vaga", None, ip)
+        except (RecursoNaoEncontradoError, ConflitoOperacaoError, ValidationError, KeyError) as e:
+            await db.rollback()
+            resultados.append(ResultadoOperacao(id=operacao.id, sucesso=False, mensagem=str(e)))
+        except Exception:
+            await db.rollback()
+            logger.exception("Erro inesperado ao sincronizar operação %s (id=%s)", operacao.tipo, operacao.id)
+            resultados.append(
+                ResultadoOperacao(id=operacao.id, sucesso=False, mensagem="Erro ao processar operação.")
+            )
+
+    return SincronizarResponse(resultados=resultados)

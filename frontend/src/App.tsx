@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import { useAuth0 } from '@auth0/auth0-react'
 import { useApiToken } from '@/auth/useApiToken'
 import { withProtection } from '@/auth/ProtectedRoute'
+import { iniciarSincronizacaoAutomatica } from '@/offline/sync'
 import Login from '@/pages/Login'
 import Home from '@/pages/Home'
 import Reservas from '@/pages/Reservas'
@@ -10,8 +12,13 @@ const ProtectedHome = withProtection(Home)
 const ProtectedReservas = withProtection(Reservas)
 
 export default function App() {
-  const { isLoading } = useAuth0()
+  const { isLoading, isAuthenticated } = useAuth0()
   useApiToken()
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    return iniciarSincronizacaoAutomatica()
+  }, [isAuthenticated])
 
   if (isLoading) {
     return (

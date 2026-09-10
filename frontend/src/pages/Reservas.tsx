@@ -45,7 +45,7 @@ export default function Reservas() {
                       variant="outline"
                       size="sm"
                       disabled={cancelar.isPending}
-                      onClick={() => cancelar.mutate(reserva.id)}
+                      onClick={() => cancelar.mutate({ reservaId: reserva.id, vagaId: reserva.vaga_id })}
                     >
                       Cancelar
                     </Button>
