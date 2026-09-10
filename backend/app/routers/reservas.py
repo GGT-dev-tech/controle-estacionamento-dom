@@ -1,13 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.reserva import Reserva
 from app.schemas.reserva import ReservaCreate, ReservaRead
 from app.security.audit import registrar_auditoria
 from app.security.auth import get_current_user
-from app.services.sync import ConflitoOperacaoError, RecursoNaoEncontradoError, aplicar_cancelamento, aplicar_reserva
+from app.services.notificacoes import notificar_reserva_cancelada, notificar_reserva_criada, notificar_reserva_expirada
+from app.services.sync import (
+    ConflitoOperacaoError,
+    RecursoNaoEncontradoError,
+    aplicar_cancelamento,
+    aplicar_reserva,
+    expirar_reservas_vencidas,
+)
 
 router = APIRouter(prefix="/reservas", tags=["Reservas"])
 
@@ -45,6 +53,7 @@ async def criar_reserva(
     await registrar_auditoria(
         db, user["sub"], "criar_reserva", "reserva", str(reserva.id), request.client.host if request.client else None
     )
+    await notificar_reserva_criada(reserva)
     return reserva
 
 
@@ -70,4 +79,20 @@ async def cancelar_reserva(
         str(reserva.id),
         request.client.host if request.client else None,
     )
+    await notificar_reserva_cancelada(reserva)
     return reserva
+
+
+@router.post("/expirar-vencidas")
+async def expirar_vencidas(
+    db: AsyncSession = Depends(get_db),
+    x_cron_secret: str | None = Header(default=None, alias="X-Cron-Secret"),
+) -> dict:
+    """Disparado por uma tarefa agendada externa (ex.: Railway Cron) periodicamente."""
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=404)
+
+    expiradas = await expirar_reservas_vencidas(db)
+    for reserva in expiradas:
+        await notificar_reserva_expirada(reserva)
+    return {"expiradas": len(expiradas)}

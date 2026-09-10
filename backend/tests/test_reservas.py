@@ -65,3 +65,39 @@ async def test_reserva_com_fim_antes_do_inicio_e_invalida(client_as_admin):
         json={"vaga_id": "G2-11", "nome": "Teste", "inicio": inicio.isoformat(), "fim": fim.isoformat()},
     )
     assert resp.status_code == 422
+
+
+async def test_expirar_vencidas_requer_cron_secret_e_libera_vaga(client_as_admin, db_session, monkeypatch):
+    from app.config import settings
+    from app.models.reserva import Reserva
+    from app.models.vaga import StatusVaga, Vaga
+
+    monkeypatch.setattr(settings, "cron_secret", "segredo-cron")
+    await _criar_vaga(client_as_admin, "G2-12")
+
+    async with db_session() as session:
+        vaga = await session.get(Vaga, "G2-12")
+        vaga.status = StatusVaga.reservada
+        session.add(
+            Reserva(
+                vaga_id="G2-12",
+                nome="Cliente Vencido",
+                telefone="11988887777",
+                inicio=datetime.utcnow() - timedelta(hours=3),
+                fim=datetime.utcnow() - timedelta(hours=1),
+                status="ativa",
+                canal="webapp",
+                criado_em=datetime.utcnow() - timedelta(hours=3),
+            )
+        )
+        await session.commit()
+
+    resp_sem_header = await client_as_admin.post("/reservas/expirar-vencidas")
+    assert resp_sem_header.status_code == 404
+
+    resp = await client_as_admin.post("/reservas/expirar-vencidas", headers={"X-Cron-Secret": "segredo-cron"})
+    assert resp.status_code == 200
+    assert resp.json()["expiradas"] == 1
+
+    vaga_depois = (await client_as_admin.get("/vagas/G2-12")).json()
+    assert vaga_depois["status"] == "livre"

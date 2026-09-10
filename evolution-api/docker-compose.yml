@@ -16,7 +16,8 @@ services:
       DATABASE_CONNECTION_URI: postgresql://evolution:evolution@evolution-postgres:5432/evolution
       CACHE_REDIS_ENABLED: "true"
       CACHE_REDIS_URI: redis://evolution-redis:6379
-      WEBHOOK_GLOBAL_URL: http://host.docker.internal:8000/webhook/whatsapp
+      # O segredo no path autentica o webhook — deve bater com WHATSAPP_WEBHOOK_SECRET do backend.
+      WEBHOOK_GLOBAL_URL: http://host.docker.internal:8000/webhook/whatsapp/${WHATSAPP_WEBHOOK_SECRET:-troque-esta-chave-min-32-caracteres}
       WEBHOOK_GLOBAL_ENABLED: "true"
     volumes:
       - evolution_instances:/evolution/instances

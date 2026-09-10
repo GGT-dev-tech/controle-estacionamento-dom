@@ -1,0 +1,45 @@
+from app.models.reserva import Reserva
+from app.services.email import enviar_cancelamento_reserva, enviar_confirmacao_reserva
+from app.services.whatsapp import enviar_mensagem
+
+
+def _reserva_para_dict(reserva: Reserva) -> dict:
+    return {
+        "nome": reserva.nome,
+        "vaga_id": reserva.vaga_id,
+        "inicio": reserva.inicio,
+        "fim": reserva.fim,
+        "placa": reserva.placa,
+        "email": reserva.email,
+    }
+
+
+async def notificar_reserva_criada(reserva: Reserva) -> None:
+    """Notifica o cliente sobre a reserva. Pulado para o canal 'whatsapp', que já confirma inline."""
+    if reserva.canal != "webapp":
+        return
+    if reserva.email:
+        await enviar_confirmacao_reserva(_reserva_para_dict(reserva))
+    if reserva.telefone:
+        await enviar_mensagem(
+            reserva.telefone, f"✅ Reserva confirmada — vaga {reserva.vaga_id}, até {reserva.fim:%d/%m %H:%M}."
+        )
+
+
+async def notificar_reserva_cancelada(reserva: Reserva) -> None:
+    if reserva.canal != "webapp":
+        return
+    if reserva.email:
+        await enviar_cancelamento_reserva(_reserva_para_dict(reserva))
+    if reserva.telefone:
+        await enviar_mensagem(reserva.telefone, f"❌ Reserva da vaga {reserva.vaga_id} foi cancelada.")
+
+
+async def notificar_reserva_expirada(reserva: Reserva) -> None:
+    """Reserva venceu sem que ninguém ocupasse a vaga — sempre notifica, independente do canal de origem."""
+    if reserva.telefone:
+        await enviar_mensagem(
+            reserva.telefone, f"⌛ Sua reserva da vaga {reserva.vaga_id} expirou e a vaga foi liberada."
+        )
+    if reserva.email:
+        await enviar_cancelamento_reserva(_reserva_para_dict(reserva))

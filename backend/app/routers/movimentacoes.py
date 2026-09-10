@@ -12,6 +12,7 @@ from app.schemas.reserva import ReservaCreate
 from app.schemas.sync import ResultadoOperacao, SincronizarRequest, SincronizarResponse
 from app.security.audit import registrar_auditoria
 from app.security.auth import get_current_user
+from app.services.notificacoes import notificar_reserva_cancelada, notificar_reserva_criada
 from app.services.sync import (
     ConflitoOperacaoError,
     RecursoNaoEncontradoError,
@@ -103,9 +104,11 @@ async def sincronizar_operacoes(
             elif operacao.tipo == "saida":
                 await aplicar_saida(db, str(operacao.payload["vaga_id"]), user["sub"])
             elif operacao.tipo == "reserva":
-                await aplicar_reserva(db, ReservaCreate.model_validate(operacao.payload), user["sub"])
+                reserva = await aplicar_reserva(db, ReservaCreate.model_validate(operacao.payload), user["sub"])
+                await notificar_reserva_criada(reserva)
             elif operacao.tipo == "cancelamento":
-                await aplicar_cancelamento(db, int(operacao.payload["reserva_id"]), user["sub"])
+                reserva = await aplicar_cancelamento(db, int(operacao.payload["reserva_id"]), user["sub"])
+                await notificar_reserva_cancelada(reserva)
 
             resultados.append(ResultadoOperacao(id=operacao.id, sucesso=True))
             await registrar_auditoria(db, user["sub"], f"sync_{operacao.tipo}", "vaga", None, ip)

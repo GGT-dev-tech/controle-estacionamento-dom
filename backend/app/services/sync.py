@@ -152,3 +152,44 @@ async def aplicar_cancelamento(db: AsyncSession, reserva_id: int, operador_sub: 
     if vaga:
         await notificar_vaga_atualizada(vaga.id, vaga.status.value)
     return reserva
+
+
+async def expirar_reservas_vencidas(db: AsyncSession) -> list[Reserva]:
+    """Marca como 'expirada' toda reserva ativa cujo horário de fim já passou, liberando a vaga
+    de volta para 'livre' quando não há outra reserva ativa para ela. Pensado para ser chamado
+    periodicamente por uma tarefa agendada (ex.: Railway Cron).
+    """
+    agora = datetime.utcnow()
+    vencidas = (
+        await db.execute(select(Reserva).where(Reserva.status == "ativa", Reserva.fim < agora))
+    ).scalars().all()
+
+    if not vencidas:
+        return []
+
+    vagas_liberadas: list[Vaga] = []
+    for reserva in vencidas:
+        reserva.status = "expirada"
+        vaga = await db.get(Vaga, reserva.vaga_id)
+        if vaga and vaga.status == StatusVaga.reservada:
+            outras_ativas = (
+                await db.execute(
+                    select(Reserva).where(
+                        Reserva.vaga_id == vaga.id, Reserva.status == "ativa", Reserva.id != reserva.id
+                    )
+                )
+            ).scalars().all()
+            if not outras_ativas:
+                vaga.status = StatusVaga.livre
+                vagas_liberadas.append(vaga)
+
+    await db.commit()
+    for reserva in vencidas:
+        await db.refresh(reserva)
+
+    if vagas_liberadas:
+        await invalidate_vagas_cache()
+        for vaga in vagas_liberadas:
+            await notificar_vaga_atualizada(vaga.id, vaga.status.value)
+
+    return list(vencidas)

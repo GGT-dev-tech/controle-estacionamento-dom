@@ -28,10 +28,15 @@ class Settings(BaseSettings):
     evolution_api_url: str = ""
     evolution_api_key: str = ""
     evolution_instance_name: str = "dom-estacionamento"
+    whatsapp_webhook_secret: str = ""
 
     # Resend
     resend_api_key: str = ""
     email_from: str = "noreply@dompagamentos.com.br"
+    relatorio_destinatarios: str = ""  # e-mails separados por vírgula
+
+    # Tarefas agendadas (Railway Cron ou similar) — autenticadas via header X-Cron-Secret
+    cron_secret: str = ""
 
     @property
     def is_production(self) -> bool:

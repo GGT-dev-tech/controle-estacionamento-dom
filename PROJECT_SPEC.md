@@ -77,11 +77,11 @@ Vite PWA Plugin (Workbox, NetworkFirst para API), Dexie.js com tabelas `operacoe
 
 ## WhatsApp (Evolution API)
 
-Deploy via template Railway (cria Evolution API + Postgres + Redis + volume `/evolution/instances`). Webhook `POST /webhook/whatsapp` no FastAPI processa `messages.upsert`, ignora mensagens `fromMe`. Comandos: `/vagas`, `/vagas S2`, `/vagas G2`, `/reservar S2-49`, `/cancelar S2-49`, `/status ABC1234`, `/ajuda`. Telefone: prefixo `55` + sufixo `@s.whatsapp.net`.
+Deploy via template Railway (cria Evolution API + Postgres + Redis + volume `/evolution/instances`). Webhook `POST /webhook/whatsapp/{WHATSAPP_WEBHOOK_SECRET}` no FastAPI — o segredo no path autentica a chamada (404 para segredo incorreto); processa `messages.upsert`, ignora mensagens `fromMe`. Comandos: `/vagas`, `/vagas S2`, `/vagas G2`, `/reservar S2-49` (reserva por 2h), `/cancelar S2-49`, `/status ABC1234`, `/ajuda`. Telefone: prefixo `55` + sufixo `@s.whatsapp.net`.
 
-## Email (Resend)
+## Email (Resend) e notificações automáticas
 
-Confirmação de reserva, lembretes, relatório diário — templates HTML simples, `resend.Emails.send`.
+Confirmação e cancelamento de reserva (enviados por email e/ou WhatsApp, pulados quando a reserva já veio do canal WhatsApp, que confirma inline), relatório diário (`GET /relatorios/diario` para consulta admin, `POST /relatorios/diario/enviar` disparado por cron externo via header `X-Cron-Secret`), e vencimento de reserva (`POST /reservas/expirar-vencidas`, também via `X-Cron-Secret`, libera a vaga e notifica o cliente). Lembrete pré-reserva ainda não implementado — necessitaria de um novo campo no modelo `Reserva` e uma semântica mais clara do produto antes de construir.
 
 ## Checklist de segurança (antes de cada deploy)
 
