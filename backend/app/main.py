@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.config import settings
-from app.routers import vagas
+from app.routers import movimentacoes, reservas, vagas, ws
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,3 +43,6 @@ async def health() -> dict:
 
 
 app.include_router(vagas.router)
+app.include_router(reservas.router)
+app.include_router(movimentacoes.router)
+app.include_router(ws.router)

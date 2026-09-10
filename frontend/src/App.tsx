@@ -4,8 +4,10 @@ import { useApiToken } from '@/auth/useApiToken'
 import { withProtection } from '@/auth/ProtectedRoute'
 import Login from '@/pages/Login'
 import Home from '@/pages/Home'
+import Reservas from '@/pages/Reservas'
 
 const ProtectedHome = withProtection(Home)
+const ProtectedReservas = withProtection(Reservas)
 
 export default function App() {
   const { isLoading } = useAuth0()
@@ -22,6 +24,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/reservas" element={<ProtectedReservas />} />
       <Route path="/*" element={<ProtectedHome />} />
     </Routes>
   )
