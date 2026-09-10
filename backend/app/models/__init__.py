@@ -1,5 +1,7 @@
+from app.models.admin_email import AdminEmail
 from app.models.audit_log import AuditLog
 from app.models.base import Base
+from app.models.dominio_autorizado import DominioAutorizado
 from app.models.movimentacao import Movimentacao
 from app.models.ocupante import Ocupante
 from app.models.reserva import Reserva
@@ -13,4 +15,6 @@ __all__ = [
     "Reserva",
     "Movimentacao",
     "AuditLog",
+    "DominioAutorizado",
+    "AdminEmail",
 ]

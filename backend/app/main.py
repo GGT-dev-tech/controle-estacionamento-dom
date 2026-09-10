@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.config import settings
-from app.routers import movimentacoes, relatorios, reservas, vagas, webhook_whatsapp, ws
+from app.routers import admin, movimentacoes, relatorios, reservas, vagas, webhook_whatsapp, ws
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,5 +46,6 @@ app.include_router(vagas.router)
 app.include_router(reservas.router)
 app.include_router(movimentacoes.router)
 app.include_router(relatorios.router)
+app.include_router(admin.router)
 app.include_router(webhook_whatsapp.router)
 app.include_router(ws.router)

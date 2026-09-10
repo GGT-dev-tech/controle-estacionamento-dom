@@ -1,6 +1,7 @@
 import { useAuth0 } from '@auth0/auth0-react'
 import type { ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
+import { useIsAdmin } from '@/auth/useIsAdmin'
 import { StatusConexao } from '@/components/StatusConexao'
 import { cn } from '@/lib/utils'
 
@@ -9,8 +10,15 @@ const NAV_LINKS = [
   { to: '/reservas', label: 'Reservas' },
 ]
 
+const NAV_LINKS_ADMIN = [
+  { to: '/relatorios', label: 'Relatórios' },
+  { to: '/admin', label: 'Admin' },
+]
+
 export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth0()
+  const isAdmin = useIsAdmin()
+  const links = isAdmin ? [...NAV_LINKS, ...NAV_LINKS_ADMIN] : NAV_LINKS
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -22,7 +30,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
           <nav className="flex flex-wrap items-center gap-3">
             <StatusConexao />
-            {NAV_LINKS.map((link) => (
+            {links.map((link) => (
               <NavLink
                 key={link.to}
                 to={link.to}

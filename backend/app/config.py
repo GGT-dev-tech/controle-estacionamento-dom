@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # Tarefas agendadas (Railway Cron ou similar) — autenticadas via header X-Cron-Secret
     cron_secret: str = ""
 
+    # Auth0 Post-Login Action — autentica as chamadas de verificação de domínio/admin
+    # via header X-Internal-Secret (o usuário ainda não tem JWT nesse ponto do login)
+    auth0_action_secret: str = ""
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"

@@ -45,3 +45,38 @@ async def test_enviar_relatorio_diario_requer_cron_secret(client_as_admin, monke
     assert resp_ok.status_code == 200
     # Sem RESEND_API_KEY configurado nos testes, o envio falha graciosamente (sem exceção).
     assert resp_ok.json()["enviado"] is False
+
+
+async def test_historico_retorna_serie_diaria(client_as_admin):
+    await client_as_admin.post("/vagas", json={"id": "S2-62", "numero": "62", "andar": "S2"})
+    await client_as_admin.post(
+        "/movimentacoes/entrada",
+        json={"vaga_id": "S2-62", "nome": "Bia", "placa": "BBB2222", "veiculo": "HB20", "tipo_cliente": "visitante"},
+    )
+
+    resp = await client_as_admin.get("/relatorios/historico?dias=3")
+    assert resp.status_code == 200
+    dias = resp.json()
+    assert len(dias) == 3
+    assert dias[-1]["entradas"] == 1
+
+
+async def test_exportar_movimentacoes_csv(client_as_admin):
+    await client_as_admin.post("/vagas", json={"id": "S2-63", "numero": "63", "andar": "S2"})
+    await client_as_admin.post(
+        "/movimentacoes/entrada",
+        json={"vaga_id": "S2-63", "nome": "Caio", "placa": "CCC3333", "veiculo": "Kwid", "tipo_cliente": "rotativo"},
+    )
+
+    resp = await client_as_admin.get("/relatorios/movimentacoes/csv")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/csv")
+    assert "attachment" in resp.headers["content-disposition"]
+    assert "CCC3333" in resp.text
+
+
+async def test_exportar_relatorio_diario_pdf(client_as_admin):
+    resp = await client_as_admin.get("/relatorios/diario/pdf")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content[:4] == b"%PDF"

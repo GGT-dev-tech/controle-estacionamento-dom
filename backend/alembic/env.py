@@ -7,7 +7,15 @@ from sqlalchemy import pool
 
 from app.config import settings
 from app.models.base import Base
-from app.models import vaga, ocupante, reserva, movimentacao, audit_log  # noqa: F401 — registra os modelos
+from app.models import (  # noqa: F401 — registra os modelos
+    admin_email,
+    audit_log,
+    dominio_autorizado,
+    movimentacao,
+    ocupante,
+    reserva,
+    vaga,
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

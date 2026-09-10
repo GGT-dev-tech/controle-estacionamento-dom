@@ -61,6 +61,30 @@ Sistema completo, inteligente e multicanal de gerenciamento de estacionamento, o
 
 Login Google → Auth0 Universal Login → Post-Login Action valida domínio do email corporativo (bloqueia domínios não autorizados, com Management API deletando usuário criado se bloqueado) → JWT RS256 → FastAPI valida via JWKS Auth0 → RBAC (admin/operador) via custom claim.
 
+**Desde a Fase 5**, a lista de domínios autorizados e de e-mails admin não é mais hardcoded na Action — vive no banco (tabelas `dominios_autorizados` e `admin_emails`, geridas pelo painel `/admin`) e a Action consulta via HTTP, autenticada por um segredo compartilhado (header `X-Internal-Secret`, configurado como Auth0 Secret `INTERNAL_API_SECRET` = `AUTH0_ACTION_SECRET` do backend):
+
+```javascript
+exports.onExecutePostLogin = async (event, api) => {
+  const email = event.user.email;
+  if (!email) { api.access.deny("Email não encontrado. Acesso negado."); return; }
+  const domain = email.split("@")[1]?.toLowerCase();
+  const headers = { "X-Internal-Secret": event.secrets.INTERNAL_API_SECRET };
+
+  const respDominio = await fetch(`${event.secrets.API_URL}/admin/dominios/${domain}/verificar`, { headers });
+  const { autorizado } = await respDominio.json();
+  if (!autorizado) {
+    api.access.deny(`Acesso restrito. O domínio @${domain} não está autorizado.`);
+    return;
+  }
+
+  const respAdmin = await fetch(`${event.secrets.API_URL}/admin/admins/${encodeURIComponent(email)}/verificar`, { headers });
+  const { admin } = await respAdmin.json();
+  api.idToken.setCustomClaim("https://estacionamento.dom/role", admin ? "admin" : "operador");
+};
+```
+
+O primeiro domínio/admin precisa ser inserido manualmente (`python -m scripts.seed_admin --dominio ... --admin ...`) antes de qualquer login funcionar — depois disso, o próprio painel `/admin` gerencia o resto.
+
 Segurança backend obrigatória: CORS restrito (sem `*`), TrustedHostMiddleware em produção, rate limiting via Redis (fastapi-limiter), headers de segurança (X-Content-Type-Options, X-Frame-Options, HSTS), access tokens nunca em localStorage.
 
 ## Estrutura do projeto
@@ -93,7 +117,7 @@ Auth0 Post-Login Action testada bloqueando domínios não autorizados; JWT valid
 2. **Core Features** — CRUD vagas/movimentações/reservas, Dashboard (andares+mapa visual), formulário entrada/saída, cache Redis vagas (TTL 30s), WebSocket tempo real.
 3. **Offline + PWA** — manifest+service worker, Dexie IndexedDB, fila de sync com retry, indicador online/offline, endpoint `/movimentacoes/sync`.
 4. **WhatsApp + Email** — Evolution API Railway + volume, webhook + processador de comandos, Resend (confirmação/lembrete/relatório diário), notificações automáticas.
-5. **Relatórios + Admin** — dashboard analítico (Recharts), exportação PDF (weasyprint)/CSV, painel admin de domínios/usuários, audit log viewer.
+5. **Relatórios + Admin** — dashboard analítico (Recharts: status das vagas + histórico de entradas/saídas), exportação PDF (`GET /relatorios/diario/pdf`, weasyprint) e CSV (`GET /relatorios/movimentacoes/csv`), painel admin de domínios/e-mails admin (`/admin/dominios`, `/admin/admins`, com bootstrap via `scripts/seed_admin.py`), audit log viewer (`GET /admin/audit-logs`).
 6. **Deploy Railway** — Dockerfiles de produção, env vars Railway, trocar driver DB para `postgresql+asyncpg://`, validar migrations no Postgres, testes de compatibilidade MySQL→Postgres, CI/CD auto-deploy, monitoramento.
 
 ## Regras gerais para o agent

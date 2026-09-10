@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,3 +57,46 @@ async def disparar_relatorio_diario(db: AsyncSession, destinatarios: list[str]) 
         return False
     relatorio = await montar_relatorio_diario(db)
     return await enviar_relatorio_diario(destinatarios, relatorio)
+
+
+async def montar_historico_diario(db: AsyncSession, dias: int) -> list[dict]:
+    """Série de entradas/saídas por dia, para os últimos `dias` dias (incluindo hoje) — usada nos gráficos."""
+    hoje = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    historico: list[dict] = []
+
+    for offset in range(dias - 1, -1, -1):
+        dia_inicio = hoje - timedelta(days=offset)
+        dia_fim = dia_inicio + timedelta(days=1)
+
+        entradas = (
+            await db.execute(
+                select(func.count()).select_from(Movimentacao).where(
+                    Movimentacao.tipo == "entrada",
+                    Movimentacao.timestamp >= dia_inicio,
+                    Movimentacao.timestamp < dia_fim,
+                )
+            )
+        ).scalar_one()
+
+        saidas = (
+            await db.execute(
+                select(Movimentacao).where(
+                    Movimentacao.tipo == "saida",
+                    Movimentacao.timestamp >= dia_inicio,
+                    Movimentacao.timestamp < dia_fim,
+                )
+            )
+        ).scalars().all()
+
+        tempos = [m.tempo_permanencia_min for m in saidas if m.tempo_permanencia_min is not None]
+
+        historico.append(
+            {
+                "data": dia_inicio.date().isoformat(),
+                "entradas": entradas,
+                "saidas": len(saidas),
+                "tempo_medio_permanencia_min": round(sum(tempos) / len(tempos)) if tempos else None,
+            }
+        )
+
+    return historico
