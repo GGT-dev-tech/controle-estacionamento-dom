@@ -16,6 +16,7 @@ from app.services.notificacoes import (
 )
 from app.services.sync import (
     ConflitoOperacaoError,
+    PermissaoNegadaError,
     RecursoNaoEncontradoError,
     aplicar_cancelamento,
     aplicar_reserva,
@@ -76,6 +77,8 @@ async def cancelar_reserva(
         raise HTTPException(status_code=404, detail=str(e))
     except ConflitoOperacaoError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except PermissaoNegadaError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
     await registrar_auditoria(
         db,

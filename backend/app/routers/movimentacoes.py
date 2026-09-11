@@ -15,6 +15,7 @@ from app.security.auth import get_current_user
 from app.services.notificacoes import notificar_reserva_cancelada, notificar_reserva_criada
 from app.services.sync import (
     ConflitoOperacaoError,
+    PermissaoNegadaError,
     RecursoNaoEncontradoError,
     aplicar_cancelamento,
     aplicar_entrada,
@@ -56,6 +57,8 @@ async def registrar_entrada(
         raise HTTPException(status_code=404, detail=str(e))
     except ConflitoOperacaoError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except PermissaoNegadaError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
     await registrar_auditoria(
         db, user["sub"], "entrada", "vaga", payload.vaga_id, request.client.host if request.client else None
@@ -76,6 +79,8 @@ async def registrar_saida(
         raise HTTPException(status_code=404, detail=str(e))
     except ConflitoOperacaoError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except PermissaoNegadaError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
     await registrar_auditoria(
         db, user["sub"], "saida", "vaga", payload.vaga_id, request.client.host if request.client else None
@@ -112,7 +117,7 @@ async def sincronizar_operacoes(
 
             resultados.append(ResultadoOperacao(id=operacao.id, sucesso=True))
             await registrar_auditoria(db, user["sub"], f"sync_{operacao.tipo}", "vaga", None, ip)
-        except (RecursoNaoEncontradoError, ConflitoOperacaoError, ValidationError, KeyError) as e:
+        except (RecursoNaoEncontradoError, ConflitoOperacaoError, PermissaoNegadaError, ValidationError, KeyError) as e:
             await db.rollback()
             resultados.append(ResultadoOperacao(id=operacao.id, sucesso=False, mensagem=str(e)))
         except Exception:

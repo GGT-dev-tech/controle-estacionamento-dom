@@ -20,6 +20,16 @@ class RecursoNaoEncontradoError(Exception):
     """A vaga/reserva referenciada pela operação não existe (ou está inativa)."""
 
 
+class ConflitoOperacaoError(Exception):
+    """A operação viola uma regra de negócio (ex.: vaga já ocupada)."""
+
+
+class PermissaoNegadaError(Exception):
+    """Quem chamou não é dono do recurso (reserva/ocupação) e não é staff — ex.: um
+    cliente tentando cancelar a reserva de outro, ou ocupar por cima da reserva alheia
+    sem estar fisicamente lá (placa não bate)."""
+
+
 async def _telefone_por_placa(db: AsyncSession, placa: str) -> str | None:
     """Acha o telefone do dono cadastrado de um veículo pela placa — usado pra confirmar
     ocupação/liberação por WhatsApp sem exigir um campo de telefone na entrada/saída
@@ -31,8 +41,12 @@ async def _telefone_por_placa(db: AsyncSession, placa: str) -> str | None:
     return cliente.telefone if cliente else None
 
 
-class ConflitoOperacaoError(Exception):
-    """A operação viola uma regra de negócio (ex.: vaga já ocupada)."""
+async def _cliente_do_operador(db: AsyncSession, operador_sub: str) -> Cliente | None:
+    """None quando quem chama não tem cadastro de cliente próprio — é como diferenciamos
+    staff/operador (EntradaModal, Admin — mantém a prioridade de corrigir o que observou
+    fisicamente em qualquer vaga) de um cliente self-service (só pode agir sobre o que é
+    seu — impede um cliente "tomar" pelo app a vaga/reserva/ocupação de outro cliente)."""
+    return (await db.execute(select(Cliente).where(Cliente.auth0_sub == operador_sub))).scalar_one_or_none()
 
 
 async def aplicar_entrada(db: AsyncSession, payload: EntradaCreate, operador_sub: str) -> Movimentacao:
@@ -45,6 +59,30 @@ async def aplicar_entrada(db: AsyncSession, payload: EntradaCreate, operador_sub
         raise RecursoNaoEncontradoError("Vaga não encontrada.")
     if vaga.status not in (StatusVaga.livre, StatusVaga.reservada):
         raise ConflitoOperacaoError("Vaga não está disponível para ocupação.")
+
+    reservas_ativas: list[Reserva] = []
+    if vaga.status == StatusVaga.reservada:
+        reservas_ativas = (
+            await db.execute(select(Reserva).where(Reserva.vaga_id == vaga.id, Reserva.status == "ativa"))
+        ).scalars().all()
+
+        cliente_atuando = await _cliente_do_operador(db, operador_sub)
+        if cliente_atuando:
+            # Um cliente self-service só pode ocupar por cima da reserva de OUTRO cliente
+            # se a placa bater (confirmando que é o próprio carro reservado chegando) —
+            # sem isso, qualquer cliente logado poderia "tomar" pelo app a vaga reservada
+            # de outra pessoa, sem estar fisicamente lá. Staff/operador (sem Cliente
+            # próprio, ex.: EntradaModal) mantém a prioridade de corrigir o que observou.
+            de_outro_sem_confirmar = any(
+                reserva.telefone != cliente_atuando.telefone
+                and not (reserva.placa and reserva.placa == payload.placa.upper())
+                for reserva in reservas_ativas
+            )
+            if de_outro_sem_confirmar:
+                raise PermissaoNegadaError(
+                    f"A vaga {vaga.id} está reservada por outro cliente — "
+                    "só quem reservou (ou a administração) pode ocupá-la agora."
+                )
 
     agora = datetime.utcnow()
 
@@ -66,16 +104,12 @@ async def aplicar_entrada(db: AsyncSession, payload: EntradaCreate, operador_sub
     # reserva sem placa registrada, ex.: feita via WhatsApp), não dá pra confirmar que é a
     # mesma pessoa: a reserva é cancelada (não "concluída") e o cliente é avisado.
     reservas_sobrepostas: list[Reserva] = []
-    if vaga.status == StatusVaga.reservada:
-        reservas_ativas = (
-            await db.execute(select(Reserva).where(Reserva.vaga_id == vaga.id, Reserva.status == "ativa"))
-        ).scalars().all()
-        for reserva in reservas_ativas:
-            if reserva.placa and reserva.placa == payload.placa.upper():
-                reserva.status = "concluida"
-            else:
-                reserva.status = "cancelada"
-                reservas_sobrepostas.append(reserva)
+    for reserva in reservas_ativas:
+        if reserva.placa and reserva.placa == payload.placa.upper():
+            reserva.status = "concluida"
+        else:
+            reserva.status = "cancelada"
+            reservas_sobrepostas.append(reserva)
 
     vaga.status = StatusVaga.ocupada
 
@@ -122,6 +156,22 @@ async def aplicar_saida(db: AsyncSession, vaga_id: str, operador_sub: str) -> Mo
     ).scalar_one_or_none()
     if not ocupante:
         raise ConflitoOperacaoError("Nenhum ocupante registrado para esta vaga.")
+
+    cliente_atuando = await _cliente_do_operador(db, operador_sub)
+    if cliente_atuando:
+        # Mesma lógica de aplicar_entrada: um cliente self-service só libera o veículo
+        # que é dele (confere pela placa); staff/operador sem Cliente próprio continua
+        # podendo liberar qualquer vaga (correção manual, Admin).
+        veiculo_do_ocupante = (
+            await db.execute(
+                select(Veiculo).where(Veiculo.placa == ocupante.placa, Veiculo.cliente_id == cliente_atuando.id)
+            )
+        ).scalar_one_or_none()
+        if not veiculo_do_ocupante:
+            raise PermissaoNegadaError(
+                f"A vaga {vaga_id} está ocupada por outro veículo — "
+                "só o dono do veículo (ou a administração) pode liberá-la."
+            )
 
     agora = datetime.utcnow()
     tempo_permanencia_min = int((agora - ocupante.hora_entrada).total_seconds() // 60)
@@ -183,6 +233,12 @@ async def aplicar_cancelamento(db: AsyncSession, reserva_id: int, operador_sub: 
         raise RecursoNaoEncontradoError("Reserva não encontrada.")
     if reserva.status != "ativa":
         raise ConflitoOperacaoError("Reserva não está ativa.")
+
+    cliente_atuando = await _cliente_do_operador(db, operador_sub)
+    if cliente_atuando and reserva.telefone != cliente_atuando.telefone:
+        raise PermissaoNegadaError(
+            "Essa reserva não é sua — só quem reservou (ou a administração) pode cancelar."
+        )
 
     reserva.status = "cancelada"
 
