@@ -14,10 +14,10 @@ VAGAS_REAIS = [
     {"numero": "49-A", "posicao": "VAGA DE TRÁS", "andar": "S2", "tipo": "presa"},
     {"numero": "53", "posicao": "Normal", "andar": "S2", "tipo": "padrao"},
     {"numero": "53-A", "posicao": "PAREDE", "andar": "S2", "tipo": "presa"},
-    {"numero": "61", "posicao": "Normal", "andar": "S2", "tipo": "padrao"},
-    {"numero": "86", "posicao": "Normal", "andar": "S2", "tipo": "padrao"},
-    {"numero": "92", "posicao": "Normal", "andar": "S2", "tipo": "padrao"},
-    {"numero": "92-A", "posicao": "VAGA DE TRÁS", "andar": "S2", "tipo": "presa"},
+    {"numero": "61", "posicao": "Normal", "andar": "G2", "tipo": "padrao"},
+    {"numero": "86", "posicao": "Normal", "andar": "G2", "tipo": "padrao"},
+    {"numero": "92", "posicao": "Normal", "andar": "G2", "tipo": "padrao"},
+    {"numero": "92-A", "posicao": "VAGA DE TRÁS", "andar": "G2", "tipo": "presa"},
 ]
 
 async def seed_vagas():
