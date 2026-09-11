@@ -9,6 +9,7 @@ from app.models.reserva import Reserva
 from app.models.vaga import StatusVaga, Vaga
 from app.schemas.movimentacao import EntradaCreate
 from app.schemas.reserva import ReservaCreate
+from app.security.audit import registrar_auditoria
 from app.services.redis_cache import invalidate_vagas_cache
 from app.services.ws_manager import notificar_vaga_atualizada
 
@@ -46,12 +47,22 @@ async def aplicar_entrada(db: AsyncSession, payload: EntradaCreate, operador_sub
     )
     db.add(ocupante)
 
+    # Prioridade para o físico: uma entrada (ao vivo ou vinda de sync offline atrasado)
+    # sempre vence uma reserva ativa. Se a placa bate com a da reserva, é quem reservou
+    # chegando — reserva cumprida, silenciosamente. Caso contrário (placa diferente, ou
+    # reserva sem placa registrada, ex.: feita via WhatsApp), não dá pra confirmar que é a
+    # mesma pessoa: a reserva é cancelada (não "concluída") e o cliente é avisado.
+    reservas_sobrepostas: list[Reserva] = []
     if vaga.status == StatusVaga.reservada:
         reservas_ativas = (
             await db.execute(select(Reserva).where(Reserva.vaga_id == vaga.id, Reserva.status == "ativa"))
         ).scalars().all()
         for reserva in reservas_ativas:
-            reserva.status = "concluida"
+            if reserva.placa and reserva.placa == payload.placa.upper():
+                reserva.status = "concluida"
+            else:
+                reserva.status = "cancelada"
+                reservas_sobrepostas.append(reserva)
 
     vaga.status = StatusVaga.ocupada
 
@@ -70,6 +81,15 @@ async def aplicar_entrada(db: AsyncSession, payload: EntradaCreate, operador_sub
     await db.refresh(movimentacao)
     await invalidate_vagas_cache()
     await notificar_vaga_atualizada(vaga.id, vaga.status.value)
+
+    for reserva in reservas_sobrepostas:
+        # Import local: notificacoes.py -> whatsapp.py -> sync.py fecharia um ciclo se
+        # importado no topo do módulo.
+        from app.services.notificacoes import notificar_reserva_sobreposta
+
+        await notificar_reserva_sobreposta(reserva)
+        await registrar_auditoria(db, operador_sub, "reserva_sobreposta_fisicamente", "reserva", str(reserva.id))
+
     return movimentacao
 
 

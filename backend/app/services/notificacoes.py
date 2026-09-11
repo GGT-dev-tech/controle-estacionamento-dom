@@ -35,6 +35,20 @@ async def notificar_reserva_cancelada(reserva: Reserva) -> None:
         await enviar_mensagem(reserva.telefone, f"❌ Reserva da vaga {reserva.vaga_id} foi cancelada.")
 
 
+async def notificar_reserva_sobreposta(reserva: Reserva) -> None:
+    """A reserva foi cancelada porque a vaga foi ocupada fisicamente por um veículo diferente
+    do que reservou (prioridade para quem chegou no local). Sempre notifica, independente do
+    canal de origem — é justamente o cliente que perdeu a vaga que precisa saber."""
+    mensagem = (
+        f"⚠️ Sua reserva da vaga {reserva.vaga_id} foi cancelada, pois ela foi ocupada "
+        "presencialmente por prioridade. Por favor, faça uma nova reserva para outra vaga."
+    )
+    if reserva.telefone:
+        await enviar_mensagem(reserva.telefone, mensagem)
+    if reserva.email:
+        await enviar_cancelamento_reserva(_reserva_para_dict(reserva))
+
+
 async def notificar_reserva_expirada(reserva: Reserva) -> None:
     """Reserva venceu sem que ninguém ocupasse a vaga — sempre notifica, independente do canal de origem."""
     if reserva.telefone:
