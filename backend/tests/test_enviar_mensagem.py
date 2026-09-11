@@ -69,16 +69,18 @@ async def test_enviar_mensagem_normaliza_nono_digito_ausente():
 
 
 async def test_enviar_mensagem_tenta_de_novo_apos_falha_e_da_certo(monkeypatch):
-    # Confirmado em produção: o mesmo número que falha (rate limiting em rajada) costuma
-    # funcionar numa segunda tentativa logo em seguida.
-    _FakeAsyncClient.falhas_restantes = 1
-    ok = await whatsapp.enviar_mensagem("11999998888", "oi")
-    assert ok is True
-    assert len(_FakeAsyncClient.chamadas) == 2
-
-
-async def test_enviar_mensagem_desiste_apos_2_falhas():
+    # Confirmado em produção: o mesmo número que falha (rate limiting) costuma funcionar
+    # numa tentativa seguinte logo depois.
     _FakeAsyncClient.falhas_restantes = 2
     ok = await whatsapp.enviar_mensagem("11999998888", "oi")
+    assert ok is True
+    assert len(_FakeAsyncClient.chamadas) == 3
+
+
+async def test_enviar_mensagem_desiste_apos_3_falhas():
+    # Confirmado em produção: um caso real precisou de mais que 2 tentativas com 3s fixos
+    # (rate limiting persistente) — daí o máximo ter subido pra 3 tentativas.
+    _FakeAsyncClient.falhas_restantes = 3
+    ok = await whatsapp.enviar_mensagem("11999998888", "oi")
     assert ok is False
-    assert len(_FakeAsyncClient.chamadas) == 2
+    assert len(_FakeAsyncClient.chamadas) == 3

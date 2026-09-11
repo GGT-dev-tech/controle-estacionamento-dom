@@ -28,6 +28,7 @@ from app.services.whatsapp_estado import definir_estado, limpar_estado, obter_es
 logger = logging.getLogger(__name__)
 
 RESERVA_DURACAO_PADRAO = timedelta(hours=2)
+_MAX_TENTATIVAS_ENVIO = 3
 _ESPERA_ANTES_DE_TENTAR_DE_NOVO_SEGUNDOS = 3.0
 
 
@@ -61,9 +62,10 @@ async def enviar_mensagem(telefone: str, texto: str) -> bool:
     do webhook adiante) duplicavam o "55" (`5555...`), gerando um número inválido e a
     mensagem nunca saía — mesmo com o resto do fluxo funcionando perfeitamente.
 
-    Tenta 2 vezes antes de desistir: confirmado em produção que o WhatsApp/Evolution API
-    rejeita (400) envios em rajada mesmo pra números válidos e ativos (rate limiting) — o
-    mesmo número que falha costuma funcionar numa segunda tentativa logo em seguida.
+    Tenta até 3 vezes antes de desistir, com espera crescente entre elas: confirmado em
+    produção que o WhatsApp/Evolution API rejeita (400) envios mesmo pra números válidos e
+    ativos quando há atividade simultânea (rate limiting) — e que 2 tentativas com 3s fixos
+    às vezes não é o bastante se a janela de limite ainda não abriu.
     """
     if not settings.evolution_api_url:
         logger.warning("Evolution API não configurada — mensagem não enviada.")
@@ -74,18 +76,26 @@ async def enviar_mensagem(telefone: str, texto: str) -> bool:
     payload = {"number": f"55{numero}@s.whatsapp.net", "text": texto}
     headers = {"apikey": settings.evolution_api_key, "Content-Type": "application/json"}
 
-    for tentativa in (1, 2):
+    for tentativa in range(1, _MAX_TENTATIVAS_ENVIO + 1):
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
                 r = await client.post(url, json=payload, headers=headers)
                 r.raise_for_status()
                 return True
             except Exception:
-                if tentativa == 1:
-                    logger.warning("Falha ao enviar mensagem WhatsApp (tentativa 1/2) — tentando de novo.")
-                    await asyncio.sleep(_ESPERA_ANTES_DE_TENTAR_DE_NOVO_SEGUNDOS)
+                if tentativa < _MAX_TENTATIVAS_ENVIO:
+                    espera = _ESPERA_ANTES_DE_TENTAR_DE_NOVO_SEGUNDOS * tentativa
+                    logger.warning(
+                        "Falha ao enviar mensagem WhatsApp (tentativa %d/%d) — tentando de novo em %.0fs.",
+                        tentativa,
+                        _MAX_TENTATIVAS_ENVIO,
+                        espera,
+                    )
+                    await asyncio.sleep(espera)
                 else:
-                    logger.exception("Falha ao enviar mensagem WhatsApp (após 2 tentativas)")
+                    logger.exception(
+                        "Falha ao enviar mensagem WhatsApp (após %d tentativas)", _MAX_TENTATIVAS_ENVIO
+                    )
     return False
 
 
