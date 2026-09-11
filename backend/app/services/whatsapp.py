@@ -17,6 +17,19 @@ logger = logging.getLogger(__name__)
 RESERVA_DURACAO_PADRAO = timedelta(hours=2)
 
 
+def normalizar_telefone(bruto: str) -> str:
+    """Normaliza para dígitos com DDD, sem código do país (ex.: '11999998888').
+
+    Aceita o remoteJid cru da Evolution API (ex.: '5511999998888@s.whatsapp.net'),
+    o telefone já sem o sufixo, ou um número digitado manualmente (com +, espaços,
+    hífens etc.). Usado tanto para gravar `Cliente.telefone` quanto para consultar.
+    """
+    apenas_digitos = "".join(c for c in bruto.split("@")[0] if c.isdigit())
+    if apenas_digitos.startswith("55") and len(apenas_digitos) in (12, 13):
+        return apenas_digitos[2:]
+    return apenas_digitos
+
+
 async def enviar_mensagem(telefone: str, texto: str) -> bool:
     """telefone: apenas dígitos com DDD, ex: '11999998888'."""
     if not settings.evolution_api_url:

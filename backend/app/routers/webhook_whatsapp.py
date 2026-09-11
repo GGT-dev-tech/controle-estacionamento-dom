@@ -1,11 +1,13 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.services.whatsapp import enviar_mensagem, processar_comando
+from app.models.cliente import Cliente
+from app.services.whatsapp import enviar_mensagem, normalizar_telefone, processar_comando
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,19 @@ async def receber_mensagem(secret: str, request: Request, db: AsyncSession = Dep
         texto = msg.get("message", {}).get("conversation", "").strip()
 
         if telefone and texto.startswith("/"):
+            cliente = (
+                await db.execute(
+                    select(Cliente).where(
+                        Cliente.telefone == normalizar_telefone(telefone), Cliente.ativo.is_(True)
+                    )
+                )
+            ).scalar_one_or_none()
+            if not cliente:
+                await enviar_mensagem(
+                    telefone, "Este serviço é exclusivo para clientes cadastrados. Fale com a administração."
+                )
+                continue
+
             resposta = await processar_comando(telefone, texto, db)
             await enviar_mensagem(telefone, resposta)
 

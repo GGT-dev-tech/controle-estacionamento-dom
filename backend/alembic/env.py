@@ -10,6 +10,7 @@ from app.models.base import Base
 from app.models import (  # noqa: F401 — registra os modelos
     admin_email,
     audit_log,
+    cliente,
     dominio_autorizado,
     movimentacao,
     ocupante,

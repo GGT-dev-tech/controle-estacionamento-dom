@@ -36,8 +36,31 @@ async def test_webhook_com_segredo_incorreto_retorna_404(client_as_admin):
     assert resp.status_code == 404
 
 
-async def test_webhook_processa_comando_e_responde(client_as_admin, monkeypatch):
+async def test_webhook_recusa_numero_nao_cadastrado(client_as_admin, monkeypatch):
     from app.routers import webhook_whatsapp
+
+    enviados = []
+
+    async def _fake_enviar_mensagem(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar_mensagem)
+
+    resp = await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("/ajuda"))
+    assert resp.status_code == 200
+    assert len(enviados) == 1
+    assert "exclusivo para clientes cadastrados" in enviados[0][1]
+
+
+async def test_webhook_processa_comando_e_responde(client_as_admin, db_session, monkeypatch):
+    from app.models.cliente import Cliente
+    from app.models.ocupante import TipoCliente
+    from app.routers import webhook_whatsapp
+
+    async with db_session() as db:
+        db.add(Cliente(nome="Cliente Teste", telefone="11999998888", tipo_cliente=TipoCliente.mensalista))
+        await db.commit()
 
     enviados = []
 

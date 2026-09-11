@@ -6,6 +6,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.admin_email import AdminEmail
 from app.models.audit_log import AuditLog
+from app.models.cliente import Cliente
 from app.models.dominio_autorizado import DominioAutorizado
 from app.schemas.admin import (
     AdminEmailCreate,
@@ -14,7 +15,9 @@ from app.schemas.admin import (
     DominioAutorizadoCreate,
     DominioAutorizadoRead,
 )
+from app.schemas.cliente import ClienteCreate, ClienteRead
 from app.security.auth import require_role
+from app.services.whatsapp import normalizar_telefone
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -133,3 +136,44 @@ async def listar_audit_logs(
     limite = min(max(limite, 1), 500)
     result = await db.execute(select(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limite))
     return list(result.scalars().all())
+
+
+# ── Clientes cadastrados (mensalistas/rotativos autorizados no bot WhatsApp) ──
+
+
+@router.get("/clientes", response_model=list[ClienteRead])
+async def listar_clientes(
+    db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("admin"))
+) -> list[Cliente]:
+    result = await db.execute(select(Cliente).order_by(Cliente.nome))
+    return list(result.scalars().all())
+
+
+@router.post("/clientes", response_model=ClienteRead, status_code=201)
+async def adicionar_cliente(
+    payload: ClienteCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_role("admin")),
+) -> Cliente:
+    telefone = normalizar_telefone(payload.telefone)
+    existente = (
+        await db.execute(select(Cliente).where(Cliente.telefone == telefone))
+    ).scalar_one_or_none()
+    if existente:
+        raise HTTPException(status_code=409, detail="Já existe um cliente com este telefone.")
+    cliente = Cliente(nome=payload.nome, telefone=telefone, tipo_cliente=payload.tipo_cliente)
+    db.add(cliente)
+    await db.commit()
+    await db.refresh(cliente)
+    return cliente
+
+
+@router.delete("/clientes/{cliente_id}", status_code=204)
+async def remover_cliente(
+    cliente_id: int, db: AsyncSession = Depends(get_db), user: dict = Depends(require_role("admin"))
+) -> None:
+    cliente = await db.get(Cliente, cliente_id)
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+    await db.delete(cliente)
+    await db.commit()
