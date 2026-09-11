@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Layout } from '@/components/Layout'
-import { useVagas, useCriarVaga, useExcluirVaga } from '@/hooks/useVagas'
+import { useVagas, useCriarVaga, useExcluirVaga, useAtualizarVaga } from '@/hooks/useVagas'
 import { ANDARES } from '@/stores/useUiStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -155,42 +155,79 @@ function AuditLogSection() {
 function VagasSection() {
   const { data: vagas, isLoading } = useVagas('')
   const criar = useCriarVaga()
+  const atualizar = useAtualizarVaga()
   const excluir = useExcluirVaga()
   const [erro, setErro] = useState<string | null>(null)
+  const [vagaEditando, setVagaEditando] = useState<any | null>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setErro(null)
     const form = new FormData(event.currentTarget)
+    const numero = String(form.get('numero'))
+    
     try {
-      await criar.mutateAsync({
-        numero: String(form.get('numero')),
-        andar: String(form.get('andar')),
-        posicao: String(form.get('posicao') || 'Normal'),
-        tipo: form.get('tipo') === 'presa' ? 'presa' : 'padrao'
-      })
+      if (vagaEditando) {
+        await atualizar.mutateAsync({
+          id: vagaEditando.id,
+          payload: {
+            numero,
+            andar: String(form.get('andar')),
+            posicao: String(form.get('posicao') || 'Normal'),
+            tipo: form.get('tipo') === 'presa' ? 'presa' : 'padrao'
+          }
+        })
+        setVagaEditando(null)
+      } else {
+        await criar.mutateAsync({
+          id: `VAGA-${numero}`,
+          numero,
+          andar: String(form.get('andar')),
+          posicao: String(form.get('posicao') || 'Normal'),
+          tipo: form.get('tipo') === 'presa' ? 'presa' : 'padrao'
+        })
+      }
       event.currentTarget.reset()
     } catch {
-      setErro('Não foi possível criar a vaga.')
+      setErro(`Não foi possível ${vagaEditando ? 'atualizar' : 'criar'} a vaga.`)
     }
   }
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="mb-3 text-sm font-semibold">Gerenciar Vagas</h3>
-      <form onSubmit={handleSubmit} className="mb-3 flex flex-wrap gap-2">
-        <Input name="numero" placeholder="Ex: 49" required className="flex-1 min-w-[80px]" />
-        <select name="andar" className="flex-1 min-w-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm">
-          {ANDARES.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
-        </select>
-        <select name="tipo" className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm">
-          <option value="padrao">Padrão</option>
-          <option value="presa">Presa</option>
-        </select>
-        <Input name="posicao" placeholder="Opcional (Ex: VAGA DE TRÁS)" className="flex-[2] min-w-[120px]" />
-        <Button type="submit" size="sm" disabled={criar.isPending}>
-          Criar
-        </Button>
+      <form onSubmit={handleSubmit} className="mb-3 flex flex-wrap gap-2 items-end">
+        <div className="flex-1 min-w-[80px]">
+          <label className="text-xs text-muted-foreground block mb-1">Número</label>
+          <Input name="numero" defaultValue={vagaEditando?.numero} placeholder="Ex: 49" required />
+        </div>
+        <div className="flex-1 min-w-[120px]">
+          <label className="text-xs text-muted-foreground block mb-1">Andar</label>
+          <select name="andar" defaultValue={vagaEditando?.andar} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm h-10">
+            {ANDARES.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+          </select>
+        </div>
+        <div className="flex-1">
+          <label className="text-xs text-muted-foreground block mb-1">Tipo</label>
+          <select name="tipo" defaultValue={vagaEditando?.tipo} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm h-10">
+            <option value="padrao">Padrão</option>
+            <option value="presa">Presa</option>
+          </select>
+        </div>
+        <div className="flex-[2] min-w-[120px]">
+          <label className="text-xs text-muted-foreground block mb-1">Posição</label>
+          <Input name="posicao" defaultValue={vagaEditando?.posicao !== 'Normal' ? vagaEditando?.posicao : ''} placeholder="Opcional (Ex: VAGA DE TRÁS)" />
+        </div>
+        <div className="flex gap-2 h-10">
+          {vagaEditando && (
+             <Button type="button" variant="outline" size="sm" onClick={() => { setVagaEditando(null); document.querySelector('form')?.reset() }}>
+               Cancelar
+             </Button>
+          )}
+          <Button type="submit" size="sm" disabled={criar.isPending || atualizar.isPending}>
+            {vagaEditando ? 'Salvar' : 'Criar'}
+          </Button>
+        </div>
       </form>
       {erro && <p className="mb-2 text-sm text-destructive">{erro}</p>}
       
@@ -201,14 +238,23 @@ function VagasSection() {
             <li key={v.id} className="flex items-center justify-between rounded-md bg-secondary px-3 py-1.5 text-sm">
               <span className="font-medium">{v.andar}-{v.numero}</span>
               <span className="text-xs text-muted-foreground ml-2">{v.tipo === 'presa' ? 'Presa' : 'Padrão'} {v.posicao !== 'Normal' ? `(${v.posicao})` : ''}</span>
-              <button
-                type="button"
-                onClick={() => excluir.mutate(v.id)}
-                disabled={excluir.isPending}
-                className="text-xs text-muted-foreground hover:text-destructive ml-auto"
-              >
-                Excluir
-              </button>
+              <div className="ml-auto flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVagaEditando(v)}
+                  className="text-xs text-muted-foreground hover:text-primary"
+                >
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => excluir.mutate(v.id)}
+                  disabled={excluir.isPending}
+                  className="text-xs text-muted-foreground hover:text-destructive"
+                >
+                  Excluir
+                </button>
+              </div>
             </li>
           ))}
           {vagas?.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma vaga cadastrada.</p>}

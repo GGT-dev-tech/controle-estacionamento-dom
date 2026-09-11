@@ -20,6 +20,7 @@ class VagaCreate(VagaBase):
 
 class VagaUpdate(BaseModel):
     numero: str | None = None
+    andar: str | None = None
     posicao: str | None = None
     tipo: str | None = None
     ativo: bool | None = None
