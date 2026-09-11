@@ -6,9 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.models.cliente import Cliente
 from app.models.ocupante import Ocupante
 from app.models.reserva import Reserva
 from app.models.vaga import StatusVaga, Vaga
+from app.models.veiculo import Veiculo
 from app.schemas.reserva import ReservaCreate
 from app.services.sync import ConflitoOperacaoError, RecursoNaoEncontradoError, aplicar_cancelamento, aplicar_reserva
 from app.services.whatsapp_estado import definir_estado, limpar_estado, obter_estado
@@ -56,9 +58,13 @@ async def processar_mensagem(telefone: str, mensagem: str, db: AsyncSession) -> 
     senão, tenta iniciar o fluxo de reserva por texto livre; senão, cai nos /comandos de hoje.
     """
     estado = await obter_estado(telefone)
-    if estado and estado.get("step") == "escolhendo_vaga":
-        await limpar_estado(telefone)
-        return await _reservar_vaga(mensagem.strip().upper(), telefone, db)
+    if estado:
+        step = estado.get("step")
+        if step == "escolhendo_vaga":
+            return await _apos_escolher_vaga(telefone, mensagem.strip().upper(), db)
+        if step == "escolhendo_veiculo":
+            return await _apos_escolher_veiculo(telefone, mensagem.strip(), estado.get("vaga_id", ""), db)
+        await limpar_estado(telefone)  # estado desconhecido/corrompido — não trava o usuário
 
     msg = mensagem.strip().lower()
     if not msg.startswith("/") and "reservar" in msg:
@@ -86,6 +92,59 @@ async def _iniciar_fluxo_reserva(telefone: str, db: AsyncSession) -> str:
     return "\n".join(linhas)
 
 
+async def _veiculos_do_cliente(telefone: str, db: AsyncSession) -> tuple[Cliente | None, list[Veiculo]]:
+    cliente = (
+        await db.execute(select(Cliente).where(Cliente.telefone == normalizar_telefone(telefone)))
+    ).scalar_one_or_none()
+    if not cliente:
+        return None, []
+    veiculos = (
+        await db.execute(select(Veiculo).where(Veiculo.cliente_id == cliente.id).order_by(Veiculo.criado_em))
+    ).scalars().all()
+    return cliente, list(veiculos)
+
+
+async def _apos_escolher_vaga(telefone: str, vaga_id: str, db: AsyncSession) -> str:
+    """Depois que o cliente escolheu a vaga: se tiver mais de um veículo cadastrado,
+    pergunta qual antes de confirmar; senão, reserva direto (0 ou 1 veículo)."""
+    _cliente, veiculos = await _veiculos_do_cliente(telefone, db)
+
+    if len(veiculos) > 1:
+        await definir_estado(telefone, {"step": "escolhendo_veiculo", "vaga_id": vaga_id})
+        linhas = [f"🚗 Você tem {len(veiculos)} veículos cadastrados — qual vai usar na vaga {vaga_id}?", ""]
+        linhas += [f"• {v.placa} — {v.veiculo}" for v in veiculos]
+        return "\n".join(linhas)
+
+    await limpar_estado(telefone)
+    return await _reservar_vaga(vaga_id, telefone, db)
+
+
+async def _apos_escolher_veiculo(telefone: str, texto: str, vaga_id: str, db: AsyncSession) -> str:
+    if not vaga_id:
+        await limpar_estado(telefone)
+        return "❌ Algo deu errado com sua reserva. Envie *reservar* para começar de novo."
+
+    _cliente, veiculos = await _veiculos_do_cliente(telefone, db)
+    placa_digitada = "".join(c for c in texto.upper() if c.isalnum())
+    escolhido = next((v for v in veiculos if v.placa == placa_digitada), None)
+    if not escolhido:
+        return "❌ Não reconheci essa placa entre seus veículos cadastrados. Envie a placa exatamente como está cadastrada."
+
+    await limpar_estado(telefone)
+    return await _reservar_vaga(vaga_id, telefone, db, placa_escolhida=escolhido.placa)
+
+
+async def _dados_reserva_do_cliente(telefone: str, db: AsyncSession) -> tuple[str, str | None, str | None]:
+    """(nome, placa, email) a partir do cadastro (Cliente + Veiculo) pra preencher a
+    reserva sozinho. Sem cadastro, ou com 2+ veículos ainda sem escolha, cai no
+    comportamento antigo (nome genérico, sem placa) — quem chama decide se pergunta antes."""
+    cliente, veiculos = await _veiculos_do_cliente(telefone, db)
+    if not cliente:
+        return f"WhatsApp {telefone}", None, None
+    placa_auto = veiculos[0].placa if len(veiculos) == 1 else None
+    return cliente.nome, placa_auto, cliente.email
+
+
 async def processar_comando(telefone: str, mensagem: str, db: AsyncSession) -> str:
     msg = mensagem.strip().lower()
 
@@ -93,7 +152,7 @@ async def processar_comando(telefone: str, mensagem: str, db: AsyncSession) -> s
         andar = "S2" if "s2" in msg else ("G2" if "g2" in msg else None)
         return await _listar_vagas(andar, db)
     if msg.startswith("/reservar "):
-        return await _reservar_vaga(mensagem[10:].strip().upper(), telefone, db)
+        return await _apos_escolher_vaga(telefone, mensagem[10:].strip().upper(), db)
     if msg.startswith("/cancelar "):
         return await _cancelar_reserva(mensagem[10:].strip().upper(), telefone, db)
     if msg.startswith("/status "):
@@ -121,11 +180,21 @@ async def _listar_vagas(andar: str | None, db: AsyncSession) -> str:
     return "\n".join(linhas)
 
 
-async def _reservar_vaga(vaga_id: str, telefone: str, db: AsyncSession) -> str:
+async def _reservar_vaga(
+    vaga_id: str, telefone: str, db: AsyncSession, placa_escolhida: str | None = None
+) -> str:
     inicio = datetime.utcnow()
     fim = inicio + RESERVA_DURACAO_PADRAO
+    nome, placa_auto, email = await _dados_reserva_do_cliente(telefone, db)
     payload = ReservaCreate(
-        vaga_id=vaga_id, nome=f"WhatsApp {telefone}", telefone=telefone, inicio=inicio, fim=fim, canal="whatsapp"
+        vaga_id=vaga_id,
+        nome=nome,
+        telefone=telefone,
+        email=email,
+        placa=placa_escolhida or placa_auto,
+        inicio=inicio,
+        fim=fim,
+        canal="whatsapp",
     )
     try:
         await aplicar_reserva(db, payload, f"whatsapp:{telefone}")

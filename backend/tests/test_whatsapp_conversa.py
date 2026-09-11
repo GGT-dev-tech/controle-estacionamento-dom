@@ -1,8 +1,10 @@
 import pytest
+from sqlalchemy import select
 
 from app.models.cliente import Cliente
 from app.models.ocupante import TipoCliente
 from app.models.vaga import StatusVaga, Vaga
+from app.models.veiculo import Veiculo
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +30,13 @@ def _segredo_webhook(monkeypatch):
 async def _criar_cliente(db_session, telefone: str = "11999998888") -> None:
     async with db_session() as db:
         db.add(Cliente(nome="Cliente Teste", telefone=telefone, tipo_cliente=TipoCliente.mensalista))
+        await db.commit()
+
+
+async def _criar_veiculo(db_session, telefone: str, placa: str, veiculo: str) -> None:
+    async with db_session() as db:
+        cliente = (await db.execute(select(Cliente).where(Cliente.telefone == telefone))).scalar_one()
+        db.add(Veiculo(cliente_id=cliente.id, placa=placa, veiculo=veiculo))
         await db.commit()
 
 
@@ -183,3 +192,153 @@ async def test_numero_nao_cadastrado_nao_ativa_fluxo_de_texto_livre(client_as_ad
     )
     assert resp.status_code == 200
     assert enviados == []
+
+
+async def test_reserva_com_cadastro_mas_sem_veiculo_usa_nome_do_cadastro_sem_placa(
+    client_as_admin, db_session, monkeypatch
+):
+    """Cliente cadastrado (ex.: só pelo admin) mas sem veículo ainda: nome já vem do
+    cadastro, mas não há placa pra escolher sozinho — igual antes da Fase B."""
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "S2-49"))
+
+    reservas = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})).json()
+    assert reservas[0]["placa"] is None
+    assert reservas[0]["nome"] == "Cliente Teste"
+
+
+async def test_reserva_conversacional_usa_veiculo_cadastrado_automaticamente(
+    client_as_admin, db_session, monkeypatch
+):
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_veiculo(db_session, "11999998888", "ABC1234", "Fiat Argo")
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
+    resp = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "S2-49")
+    )
+    assert resp.status_code == 200
+    assert "reservada" in enviados[-1][1]
+
+    reservas = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})).json()
+    assert reservas[0]["placa"] == "ABC1234"
+    assert reservas[0]["nome"] == "Cliente Teste"
+
+
+async def test_reserva_com_dois_veiculos_pergunta_qual_usar_e_confirma_com_a_escolha(
+    client_as_admin, db_session, monkeypatch
+):
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_veiculo(db_session, "11999998888", "ABC1234", "Fiat Argo")
+    await _criar_veiculo(db_session, "11999998888", "XYZ5678", "Onix")
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
+    resp_vaga = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "S2-49")
+    )
+    assert resp_vaga.status_code == 200
+    assert "ABC1234" in enviados[-1][1] and "XYZ5678" in enviados[-1][1]
+
+    resp_placa = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "XYZ5678")
+    )
+    assert resp_placa.status_code == 200
+    assert "reservada" in enviados[-1][1]
+
+    reservas = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})).json()
+    assert reservas[0]["placa"] == "XYZ5678"
+
+
+async def test_placa_invalida_ao_escolher_veiculo_pede_de_novo(client_as_admin, db_session, monkeypatch):
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_veiculo(db_session, "11999998888", "ABC1234", "Fiat Argo")
+    await _criar_veiculo(db_session, "11999998888", "XYZ5678", "Onix")
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "S2-49"))
+
+    resp_errada = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "QQQ0000")
+    )
+    assert resp_errada.status_code == 200
+    assert "Não reconheci" in enviados[-1][1]
+
+    resp_certa = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "ABC1234")
+    )
+    assert resp_certa.status_code == 200
+    assert "reservada" in enviados[-1][1]
+
+    reservas = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})).json()
+    assert reservas[0]["placa"] == "ABC1234"
+
+
+async def test_comando_classico_reservar_tambem_pergunta_veiculo_se_tiver_mais_de_um(
+    client_as_admin, db_session, monkeypatch
+):
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_veiculo(db_session, "11999998888", "ABC1234", "Fiat Argo")
+    await _criar_veiculo(db_session, "11999998888", "XYZ5678", "Onix")
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    resp = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "/reservar S2-49")
+    )
+    assert resp.status_code == 200
+    assert "ABC1234" in enviados[-1][1] and "XYZ5678" in enviados[-1][1]
