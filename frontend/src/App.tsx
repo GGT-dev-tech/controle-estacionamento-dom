@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Route, Routes } from 'react-router-dom'
+import { Route, Routes, Navigate } from 'react-router-dom'
 import { useAuth0 } from '@auth0/auth0-react'
 import { useApiToken } from '@/auth/useApiToken'
 import { withProtection } from '@/auth/ProtectedRoute'
@@ -62,7 +62,14 @@ export default function App() {
 
   // O gate de primeiro acesso só faz sentido pra quem já autenticou — evita uma
   // chamada a /clientes/me (que sempre 401 sem token) na tela de login.
-  if (!isAuthenticated) return rotas
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    )
+  }
 
   return <RequireCadastro>{rotas}</RequireCadastro>
 }
