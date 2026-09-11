@@ -17,6 +17,20 @@ const STATUS_LABEL: Record<Vaga['status'], string> = {
   manutencao: 'Manutenção',
 }
 
+const STATUS_RING: Record<Vaga['status'], string> = {
+  livre: 'ring-1 ring-vaga-livre/30',
+  ocupada: 'ring-1 ring-vaga-ocupada/30',
+  reservada: 'ring-1 ring-vaga-reservada/30',
+  manutencao: '',
+}
+
+const STATUS_DOT: Record<Vaga['status'], string> = {
+  livre: 'bg-vaga-livre shadow-glow-livre',
+  ocupada: 'bg-vaga-ocupada shadow-glow-ocupada',
+  reservada: 'bg-vaga-reservada shadow-glow-reservada',
+  manutencao: 'bg-vaga-manutencao',
+}
+
 const PRAZOS_RESERVA = [
   { minutos: 15, label: '15 min' },
   { minutos: 30, label: '30 min' },
@@ -119,14 +133,22 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
   return (
     <div
       className={cn(
-        'flex flex-col gap-3 rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4 text-card-foreground',
+        'flex flex-col gap-3 rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4 text-card-foreground transition-shadow',
+        STATUS_RING[vaga.status],
         !vaga.ativo && 'opacity-50',
       )}
     >
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-1.5">
-            <p className="text-lg font-semibold">{vaga.id}</p>
+            <span
+              className={cn(
+                'h-2 w-2 shrink-0 rounded-full',
+                STATUS_DOT[vaga.status],
+                vaga.status !== 'manutencao' && 'animate-pulse',
+              )}
+            />
+            <p className="font-mono text-lg font-semibold tabular-nums">{vaga.id}</p>
             <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
               {vaga.andar}
             </span>
@@ -140,7 +162,7 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
         <div className="text-sm">
           <p className="font-medium">{vaga.ocupante.nome}</p>
           <p className="text-muted-foreground">
-            {vaga.ocupante.veiculo} • {vaga.ocupante.placa}
+            {vaga.ocupante.veiculo} • <span className="font-mono tabular-nums">{vaga.ocupante.placa}</span>
           </p>
         </div>
       )}
@@ -151,7 +173,10 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
             {reservaEhMinha ? 'Reservada por você' : `Reservada para ${vaga.reserva_ativa.nome}`}
           </p>
           <p className="text-muted-foreground">
-            até {new Date(vaga.reserva_ativa.fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            até{' '}
+            <span className="font-mono tabular-nums">
+              {new Date(vaga.reserva_ativa.fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </span>
           </p>
         </div>
       )}
