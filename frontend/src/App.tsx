@@ -8,7 +8,6 @@ import { RequireCadastro } from '@/auth/RequireCadastro'
 import { iniciarSincronizacaoAutomatica } from '@/offline/sync'
 import Login from '@/pages/Login'
 import Home from '@/pages/Home'
-import Reservas from '@/pages/Reservas'
 import Relatorios from '@/pages/Relatorios'
 import Admin from '@/pages/Admin'
 import MeuCadastro from '@/pages/MeuCadastro'
@@ -30,7 +29,6 @@ function AdminPage() {
 }
 
 const ProtectedHome = withProtection(Home)
-const ProtectedReservas = withProtection(Reservas)
 const ProtectedRelatorios = withProtection(RelatoriosPage)
 const ProtectedAdmin = withProtection(AdminPage)
 const ProtectedMeuCadastro = withProtection(MeuCadastro)
@@ -55,7 +53,6 @@ export default function App() {
   const rotas = (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/reservas" element={<ProtectedReservas />} />
       <Route path="/relatorios" element={<ProtectedRelatorios />} />
       <Route path="/admin" element={<ProtectedAdmin />} />
       <Route path="/meu-cadastro" element={<ProtectedMeuCadastro />} />

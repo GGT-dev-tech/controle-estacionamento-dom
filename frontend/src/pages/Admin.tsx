@@ -1,7 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { Layout } from '@/components/Layout'
 import { useVagas, useCriarVaga, useExcluirVaga, useAtualizarVaga } from '@/hooks/useVagas'
+import { useCancelarReserva, useReservas } from '@/hooks/useReservas'
+import { ReservaForm } from '@/components/ReservaForm'
 import { ANDARES } from '@/stores/useUiStore'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -186,6 +189,57 @@ function AdminsSection() {
   )
 }
 
+const STATUS_VARIANT: Record<string, 'livre' | 'reservada' | 'neutro'> = {
+  ativa: 'reservada',
+  concluida: 'livre',
+  cancelada: 'neutro',
+}
+
+function ReservasSection() {
+  const { data: reservas, isLoading } = useReservas()
+  const cancelar = useCancelarReserva()
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 lg:col-span-2">
+      <h3 className="mb-3 text-sm font-semibold">Reservas</h3>
+      <ReservaForm />
+      {isLoading && <p className="mt-3 text-sm text-muted-foreground">Carregando…</p>}
+      <div className="mt-3 space-y-2">
+        {reservas?.map((reserva) => (
+          <div
+            key={reserva.id}
+            className="flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm"
+          >
+            <div>
+              <p className="font-medium">
+                {reserva.vaga_id} — {reserva.nome}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {new Date(reserva.inicio).toLocaleString('pt-BR')} até{' '}
+                {new Date(reserva.fim).toLocaleString('pt-BR')}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge variant={STATUS_VARIANT[reserva.status] ?? 'neutro'}>{reserva.status}</Badge>
+              {reserva.status === 'ativa' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={cancelar.isPending}
+                  onClick={() => cancelar.mutate({ reservaId: reserva.id, vagaId: reserva.vaga_id })}
+                >
+                  Cancelar
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+        {reservas?.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma reserva ainda.</p>}
+      </div>
+    </div>
+  )
+}
+
 function AuditLogSection() {
   const { data: logs, isLoading } = useAuditLogs()
 
@@ -349,6 +403,7 @@ export default function Admin() {
           <AdminsSection />
           <VagasSection />
           <ClientesSection />
+          <ReservasSection />
         </div>
         <AuditLogSection />
       </div>

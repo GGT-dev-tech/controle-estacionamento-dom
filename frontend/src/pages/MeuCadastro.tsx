@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Layout } from '@/components/Layout'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,6 +10,13 @@ import {
   useMeuCadastro,
   useRemoverVeiculo,
 } from '@/hooks/useCliente'
+import { useCancelarReserva, useReservas } from '@/hooks/useReservas'
+
+const STATUS_VARIANT: Record<string, 'livre' | 'reservada' | 'neutro'> = {
+  ativa: 'reservada',
+  concluida: 'livre',
+  cancelada: 'neutro',
+}
 
 function DadosSection() {
   const { data: cadastro } = useMeuCadastro()
@@ -114,6 +122,53 @@ function VeiculosSection() {
   )
 }
 
+function MinhasReservasSection() {
+  const { data: cadastro } = useMeuCadastro()
+  const { data: reservas, isLoading } = useReservas()
+  const cancelar = useCancelarReserva()
+
+  const minhasReservas = reservas?.filter((r) => r.telefone === cadastro?.telefone)
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <h3 className="mb-3 text-sm font-semibold">Minhas reservas</h3>
+      {isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+      <div className="space-y-2">
+        {minhasReservas?.map((reserva) => (
+          <div
+            key={reserva.id}
+            className="flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm"
+          >
+            <div>
+              <p className="font-medium">{reserva.vaga_id}</p>
+              <p className="text-xs text-muted-foreground">
+                {new Date(reserva.inicio).toLocaleString('pt-BR')} até{' '}
+                {new Date(reserva.fim).toLocaleString('pt-BR')}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge variant={STATUS_VARIANT[reserva.status] ?? 'neutro'}>{reserva.status}</Badge>
+              {reserva.status === 'ativa' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={cancelar.isPending}
+                  onClick={() => cancelar.mutate({ reservaId: reserva.id, vagaId: reserva.vaga_id })}
+                >
+                  Cancelar
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+        {minhasReservas?.length === 0 && (
+          <p className="text-sm text-muted-foreground">Nenhuma reserva ainda.</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function MeuCadastro() {
   return (
     <Layout>
@@ -121,6 +176,7 @@ export default function MeuCadastro() {
         <h2 className="text-sm font-semibold">Meu cadastro</h2>
         <DadosSection />
         <VeiculosSection />
+        <MinhasReservasSection />
       </div>
     </Layout>
   )
