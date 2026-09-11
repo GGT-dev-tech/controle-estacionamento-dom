@@ -11,6 +11,15 @@ export interface AdminEmailEntry {
   criado_em: string
 }
 
+export interface ClienteEntry {
+  id: number
+  nome: string
+  telefone: string
+  tipo_cliente: string
+  ativo: boolean
+  criado_em: string
+}
+
 export interface AuditLogEntry {
   id: number
   usuario_id: string
@@ -53,4 +62,22 @@ export async function removerAdmin(email: string): Promise<void> {
 export async function listarAuditLogs(limite: number): Promise<AuditLogEntry[]> {
   const { data } = await apiClient.get<AuditLogEntry[]>('/admin/audit-logs', { params: { limite } })
   return data
+}
+
+export async function listarClientesAdmin(): Promise<ClienteEntry[]> {
+  const { data } = await apiClient.get<ClienteEntry[]>('/admin/clientes')
+  return data
+}
+
+export async function adicionarClienteAdmin(payload: {
+  nome: string
+  telefone: string
+  tipo_cliente: string
+}): Promise<ClienteEntry> {
+  const { data } = await apiClient.post<ClienteEntry>('/admin/clientes', payload)
+  return data
+}
+
+export async function removerClienteAdmin(clienteId: number): Promise<void> {
+  await apiClient.delete(`/admin/clientes/${clienteId}`)
 }

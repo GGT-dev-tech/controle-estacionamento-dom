@@ -4,15 +4,90 @@ import { useVagas, useCriarVaga, useExcluirVaga, useAtualizarVaga } from '@/hook
 import { ANDARES } from '@/stores/useUiStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import {
   useAdicionarAdmin,
+  useAdicionarClienteAdmin,
   useAdicionarDominio,
   useAdmins,
   useAuditLogs,
+  useClientesAdmin,
   useDominios,
   useRemoverAdmin,
+  useRemoverClienteAdmin,
   useRemoverDominio,
 } from '@/hooks/useAdmin'
+
+const TIPOS_CLIENTE = [
+  { value: 'mensalista', label: 'Mensalista' },
+  { value: 'rotativo', label: 'Rotativo' },
+  { value: 'visitante', label: 'Visitante' },
+  { value: 'prestador', label: 'Prestador de serviço' },
+]
+
+function ClientesSection() {
+  const { data: clientes } = useClientesAdmin()
+  const adicionar = useAdicionarClienteAdmin()
+  const remover = useRemoverClienteAdmin()
+  const [erro, setErro] = useState<string | null>(null)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErro(null)
+    const form = new FormData(event.currentTarget)
+    try {
+      await adicionar.mutateAsync({
+        nome: String(form.get('nome')),
+        telefone: String(form.get('telefone')),
+        tipo_cliente: String(form.get('tipo_cliente')),
+      })
+      event.currentTarget.reset()
+    } catch {
+      setErro('Não foi possível adicionar (telefone já cadastrado?).')
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <h3 className="mb-3 text-sm font-semibold">Clientes cadastrados (bot WhatsApp)</h3>
+      <form onSubmit={handleSubmit} className="mb-3 flex flex-wrap gap-2">
+        <Input name="nome" placeholder="Nome" required className="flex-1 min-w-[120px]" />
+        <Input name="telefone" placeholder="11999998888" required className="w-36" />
+        <Select name="tipo_cliente" defaultValue="mensalista" className="w-40">
+          {TIPOS_CLIENTE.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
+        </Select>
+        <Button type="submit" size="sm" disabled={adicionar.isPending}>
+          Adicionar
+        </Button>
+      </form>
+      {erro && <p className="mb-2 text-sm text-destructive">{erro}</p>}
+      <ul className="space-y-1">
+        {clientes?.map((c) => (
+          <li
+            key={c.id}
+            className="flex items-center justify-between rounded-md bg-secondary px-3 py-1.5 text-sm"
+          >
+            <span>
+              <span className="font-medium">{c.nome}</span> — {c.telefone} ({c.tipo_cliente})
+            </span>
+            <button
+              onClick={() => remover.mutate(c.id)}
+              disabled={remover.isPending}
+              className="text-xs text-muted-foreground hover:text-destructive"
+            >
+              Remover
+            </button>
+          </li>
+        ))}
+        {clientes?.length === 0 && <p className="text-sm text-muted-foreground">Nenhum cliente cadastrado ainda.</p>}
+      </ul>
+    </div>
+  )
+}
 
 function DominiosSection() {
   const { data: dominios } = useDominios()
@@ -273,6 +348,7 @@ export default function Admin() {
           <DominiosSection />
           <AdminsSection />
           <VagasSection />
+          <ClientesSection />
         </div>
         <AuditLogSection />
       </div>
