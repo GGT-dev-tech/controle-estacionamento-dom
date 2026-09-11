@@ -53,6 +53,44 @@ async def test_webhook_recusa_numero_nao_cadastrado(client_as_admin, monkeypatch
     assert "exclusivo para clientes cadastrados" in enviados[0][1]
 
 
+async def test_webhook_processa_resposta_extendedtextmessage(client_as_admin, db_session, monkeypatch):
+    """Uma resposta/reply no WhatsApp chega como message.extendedTextMessage.text, não
+    message.conversation (formato de mensagem simples) — sem cobrir isso, o webhook
+    ignorava silenciosamente qualquer mensagem enviada como resposta a outra."""
+    from app.models.cliente import Cliente
+    from app.models.ocupante import TipoCliente
+    from app.routers import webhook_whatsapp
+
+    async with db_session() as db:
+        db.add(Cliente(nome="Cliente Teste", telefone="11999998888", tipo_cliente=TipoCliente.rotativo))
+        await db.commit()
+
+    enviados = []
+
+    async def _fake_enviar_mensagem(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar_mensagem)
+
+    payload = {
+        "event": "messages.upsert",
+        "data": {
+            "messages": [
+                {
+                    "key": {"remoteJid": "11999998888@s.whatsapp.net", "fromMe": False},
+                    "message": {"extendedTextMessage": {"text": "/ajuda"}},
+                }
+            ]
+        },
+    }
+
+    resp = await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=payload)
+    assert resp.status_code == 200
+    assert len(enviados) == 1
+    assert "Comandos" in enviados[0][1]
+
+
 async def test_webhook_processa_comando_e_responde(client_as_admin, db_session, monkeypatch):
     from app.models.cliente import Cliente
     from app.models.ocupante import TipoCliente

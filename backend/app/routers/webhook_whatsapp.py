@@ -14,6 +14,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook", tags=["WhatsApp"])
 
 
+def _extrair_texto(mensagem: dict) -> str:
+    """Mensagem de texto simples vem em message.conversation; uma resposta/reply (ou
+    mensagem com preview de link) vem em message.extendedTextMessage.text — formato
+    diferente do Baileys/Evolution API. Sem cobrir os dois, boa parte das mensagens reais
+    (qualquer resposta a uma mensagem anterior) seria silenciosamente ignorada."""
+    if texto := mensagem.get("conversation"):
+        return texto.strip()
+    return mensagem.get("extendedTextMessage", {}).get("text", "").strip()
+
+
 @router.post("/whatsapp/{secret}")
 async def receber_mensagem(secret: str, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     """Recebe eventos da Evolution API. O segredo no path garante que só a Evolution API (configurada
@@ -33,7 +43,7 @@ async def receber_mensagem(secret: str, request: Request, db: AsyncSession = Dep
             continue
 
         telefone = msg.get("key", {}).get("remoteJid", "").replace("@s.whatsapp.net", "")
-        texto = msg.get("message", {}).get("conversation", "").strip()
+        texto = _extrair_texto(msg.get("message", {}))
 
         if not telefone or not texto:
             continue
