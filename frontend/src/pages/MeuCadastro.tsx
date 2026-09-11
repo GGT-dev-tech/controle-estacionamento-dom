@@ -141,7 +141,7 @@ function MinhasReservasSection() {
           >
             <div>
               <p className="font-medium">{reserva.vaga_id}</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="font-mono text-xs tabular-nums text-muted-foreground">
                 {new Date(reserva.inicio).toLocaleString('pt-BR')} até{' '}
                 {new Date(reserva.fim).toLocaleString('pt-BR')}
               </p>

@@ -1,23 +1,24 @@
 /**
- * Paleta validada (dataviz skill) — a app hoje só renderiza em dark mode (index.html fixa
- * `class="dark"`, sem toggle ainda), então usamos apenas os steps de dark aqui.
+ * Paleta de syntax highlighting (VS Code Dark) — os mesmos tons usados nos indicadores de
+ * status das vagas (index.css: --vaga-livre/ocupada/reservada), pra o Relatórios ler como
+ * parte do mesmo sistema visual em vez de uma paleta de gráfico genérica à parte.
  */
 export const STATUS_COLORS = {
-  livre: '#0ca30c', // good
-  reservada: '#fab219', // warning
-  ocupada: '#d03b3b', // critical
-  manutencao: '#898781', // neutro (fora da paleta de status — não é um estado de alerta)
+  livre: '#4ec9b0', // teal — mesmo tom de --vaga-livre
+  reservada: '#dcdcaa', // amarelo suave — mesmo tom de --vaga-reservada
+  ocupada: '#ce9178', // terracota — mesmo tom de --vaga-ocupada
+  manutencao: '#737373', // neutro (fora da paleta de status — não é um estado de alerta)
 } as const
 
 export const SERIES_COLORS = {
-  entradas: '#3987e5', // categórico slot 1 (azul, dark)
-  saidas: '#d95926', // categórico slot 2 (laranja, dark)
+  entradas: '#569cd6', // azul (functions/keywords)
+  saidas: '#ce9178', // terracota (strings)
 } as const
 
 export const CHART_INK = {
-  primary: '#ffffff',
-  secondary: '#c3c2b7',
-  muted: '#898781',
-  grid: '#2c2c2a',
-  surface: '#1a1a19',
+  primary: '#d4d4d4',
+  secondary: '#999999',
+  muted: '#737373',
+  grid: '#404040',
+  surface: '#121212',
 } as const

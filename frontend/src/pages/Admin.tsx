@@ -214,7 +214,7 @@ function ReservasSection() {
               <p className="font-medium">
                 {reserva.vaga_id} — {reserva.nome}
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="font-mono text-xs tabular-nums text-muted-foreground">
                 {new Date(reserva.inicio).toLocaleString('pt-BR')} até{' '}
                 {new Date(reserva.fim).toLocaleString('pt-BR')}
               </p>
@@ -261,7 +261,7 @@ function AuditLogSection() {
           <tbody>
             {logs?.map((log) => (
               <tr key={log.id} className="border-t border-border">
-                <td className="py-1.5 pr-3 tabular-nums">{new Date(log.timestamp).toLocaleString('pt-BR')}</td>
+                <td className="py-1.5 pr-3 font-mono tabular-nums">{new Date(log.timestamp).toLocaleString('pt-BR')}</td>
                 <td className="py-1.5 pr-3">{log.usuario_id}</td>
                 <td className="py-1.5 pr-3">{log.acao}</td>
                 <td className="py-1.5 pr-3">
