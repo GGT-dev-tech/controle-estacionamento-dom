@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import type { TipoCliente } from './types'
 
 export interface Veiculo {
   id: number
@@ -12,7 +13,7 @@ export interface MeuCadastro {
   nome: string
   telefone: string
   email: string | null
-  tipo_cliente: string
+  tipo_cliente: TipoCliente
   ativo: boolean
   criado_em: string
   veiculos: Veiculo[]
