@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.whatsapp import processar_comando
+from app.services.whatsapp import processar_comando, processar_mensagem
 
 
 @pytest.fixture(autouse=True)
@@ -30,12 +30,26 @@ async def test_comando_vagas_lista(client_as_admin, db_session):
     assert "S2-49" in resposta
 
 
-async def test_fluxo_reservar_e_cancelar_via_whatsapp(client_as_admin, db_session):
+async def test_fluxo_reservar_e_cancelar_via_whatsapp(client_as_admin, db_session, monkeypatch):
+    # /reservar agora pergunta a duração antes de confirmar — precisa de um Redis de
+    # verdade (fake em memória) pra lembrar o passo entre as duas mensagens; o resto do
+    # arquivo usa o fixture _sem_redis (fail-open) porque não depende de estado.
+    import fakeredis.aioredis
+
+    from app.services import whatsapp_estado
+
+    fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(whatsapp_estado, "get_redis", lambda: fake)
+
     await _criar_vaga(client_as_admin, "S2-50")
     telefone = "11999998888"
 
     async with db_session() as session:
         resposta = await processar_comando(telefone, "/reservar S2-50", session)
+    assert "por quanto tempo" in resposta.lower()
+
+    async with db_session() as session:
+        resposta = await processar_mensagem(telefone, "1", session)
     assert "reservada" in resposta.lower()
 
     vaga = (await client_as_admin.get("/vagas/S2-50")).json()

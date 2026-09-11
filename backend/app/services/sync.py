@@ -237,12 +237,14 @@ async def lembrar_reservas_proximas_do_vencimento(db: AsyncSession, janela_minut
 
     proximas = (
         await db.execute(
-            select(Reserva).where(
+            select(Reserva)
+            .where(
                 Reserva.status == "ativa",
                 Reserva.fim > agora,
                 Reserva.fim <= limite,
                 Reserva.lembrete_enviado.is_(False),
             )
+            .with_for_update(skip_locked=True)
         )
     ).scalars().all()
 

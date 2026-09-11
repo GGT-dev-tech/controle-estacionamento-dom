@@ -110,7 +110,19 @@ async def _veiculos_do_cliente(telefone: str, db: AsyncSession) -> tuple[Cliente
 
 async def _apos_escolher_vaga(telefone: str, vaga_id: str, db: AsyncSession) -> str:
     """Depois que o cliente escolheu a vaga: se tiver mais de um veículo cadastrado,
-    pergunta qual antes de confirmar; senão, reserva direto (0 ou 1 veículo)."""
+    pergunta qual antes de confirmar; senão, reserva direto (0 ou 1 veículo).
+
+    Só confere aqui se a vaga existe — sem isso, uma vaga inexistente só seria percebida
+    depois de escolher a duração, um vai-e-vem sem necessidade. Se ela existe mas já não
+    está livre, não intercepta: o conflito real (concorrência) só é resolvido com segurança
+    mais à frente, em aplicar_reserva (SELECT FOR UPDATE) — uma leitura sem lock aqui só
+    serviria pra mostrar uma mensagem antecipada, potencialmente já desatualizada.
+    """
+    vaga = await db.get(Vaga, vaga_id)
+    if not vaga or not vaga.ativo:
+        await limpar_estado(telefone)
+        return f"❌ Vaga {vaga_id} não encontrada."
+
     _cliente, veiculos = await _veiculos_do_cliente(telefone, db)
 
     if len(veiculos) > 1:
@@ -305,7 +317,7 @@ def _ajuda() -> str:
         "*/vagas* — Ver vagas disponíveis\n"
         "*/vagas S2* — Vagas do Subsolo 2\n"
         "*/vagas G2* — Vagas da Garagem 2\n"
-        "*/reservar S2-49* — Reservar vaga por 2h\n"
+        "*/reservar S2-49* — Reservar vaga (escolhe o tempo em seguida)\n"
         "*reservar* — inicia uma reserva por conversa (escolha a vaga na lista)\n"
         "*/cancelar S2-49* — Cancelar sua reserva\n"
         "*/status ABC1234* — Verificar placa\n\n"

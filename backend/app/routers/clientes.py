@@ -80,7 +80,7 @@ async def criar_meu_cadastro(
             nome=payload.nome,
             telefone=telefone,
             email=payload.email,
-            tipo_cliente=TipoCliente.mensalista,
+            tipo_cliente=TipoCliente.rotativo,
             auth0_sub=user["sub"],
         )
         db.add(cliente)

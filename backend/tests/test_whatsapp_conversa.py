@@ -111,6 +111,12 @@ async def test_fluxo_completo_reservar_conversa_confirma_vaga(client_as_admin, d
         "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "S2-49")
     )
     assert resp.status_code == 200
+    assert "por quanto tempo" in enviados[-1][1].lower()
+
+    resp_tempo = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1")
+    )
+    assert resp_tempo.status_code == 200
     assert "reservada" in enviados[-1][1]
 
     from app.services.whatsapp_estado import obter_estado
@@ -175,6 +181,19 @@ async def test_segunda_tentativa_de_reserva_na_mesma_vaga_recebe_mensagem_de_con
     )
     assert resp1.status_code == 200
     assert resp2.status_code == 200
+    # Nenhum dos dois sabe ainda que a vaga foi disputada — os dois recebem a pergunta de
+    # duração; o conflito só é resolvido (com lock) quando cada um efetivamente confirma.
+    assert "por quanto tempo" in enviados[-2][1].lower()
+    assert "por quanto tempo" in enviados[-1][1].lower()
+
+    resp1_tempo = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1")
+    )
+    resp2_tempo = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511988887777", "1")
+    )
+    assert resp1_tempo.status_code == 200
+    assert resp2_tempo.status_code == 200
     assert "reservada" in enviados[-2][1]
     assert "reservada por outra pessoa" in enviados[-1][1]
 
@@ -217,6 +236,7 @@ async def test_reserva_com_cadastro_mas_sem_veiculo_usa_nome_do_cadastro_sem_pla
 
     await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
     await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "S2-49"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1"))
 
     reservas = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})).json()
     assert reservas[0]["placa"] is None
@@ -245,6 +265,12 @@ async def test_reserva_conversacional_usa_veiculo_cadastrado_automaticamente(
         "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "S2-49")
     )
     assert resp.status_code == 200
+    assert "por quanto tempo" in enviados[-1][1].lower()
+
+    resp_tempo = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1")
+    )
+    assert resp_tempo.status_code == 200
     assert "reservada" in enviados[-1][1]
 
     reservas = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})).json()
@@ -281,6 +307,12 @@ async def test_reserva_com_dois_veiculos_pergunta_qual_usar_e_confirma_com_a_esc
         "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "XYZ5678")
     )
     assert resp_placa.status_code == 200
+    assert "por quanto tempo" in enviados[-1][1].lower()
+
+    resp_tempo = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1")
+    )
+    assert resp_tempo.status_code == 200
     assert "reservada" in enviados[-1][1]
 
     reservas = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})).json()
@@ -316,6 +348,12 @@ async def test_placa_invalida_ao_escolher_veiculo_pede_de_novo(client_as_admin, 
         "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "ABC1234")
     )
     assert resp_certa.status_code == 200
+    assert "por quanto tempo" in enviados[-1][1].lower()
+
+    resp_tempo = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1")
+    )
+    assert resp_tempo.status_code == 200
     assert "reservada" in enviados[-1][1]
 
     reservas = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})).json()
