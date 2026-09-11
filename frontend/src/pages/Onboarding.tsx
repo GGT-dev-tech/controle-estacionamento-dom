@@ -36,7 +36,7 @@ export default function Onboarding({ onPular }: { onPular: () => void }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+    <div className="flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm space-y-4 rounded-lg border border-border bg-card p-6">
         <div>
           <h1 className="text-lg font-semibold text-foreground">Bem-vindo(a) ao Estacionamento Dom</h1>

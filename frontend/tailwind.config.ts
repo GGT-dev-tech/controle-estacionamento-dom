@@ -47,6 +47,17 @@ export default {
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
       },
+      fontFamily: {
+        sans: ['"Space Grotesk"', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+      },
+      boxShadow: {
+        glass: 'inset 0 1px 1px rgba(255,255,255,0.1)',
+        'glow-primary': '0 0 15px hsl(var(--primary) / 0.5)',
+        'glow-livre': '0 0 15px hsl(var(--vaga-livre) / 0.5)',
+        'glow-ocupada': '0 0 15px hsl(var(--vaga-ocupada) / 0.5)',
+        'glow-reservada': '0 0 15px hsl(var(--vaga-reservada) / 0.5)',
+      },
     },
   },
   plugins: [],

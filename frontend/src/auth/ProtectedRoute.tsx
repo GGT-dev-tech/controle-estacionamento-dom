@@ -4,7 +4,7 @@ import type { ComponentType } from 'react'
 export function withProtection<P extends object>(Component: ComponentType<P>) {
   return withAuthenticationRequired(Component, {
     onRedirecting: () => (
-      <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground">
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
         Carregando…
       </div>
     ),

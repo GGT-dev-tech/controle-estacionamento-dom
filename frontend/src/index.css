@@ -4,62 +4,52 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --primary: 221 83% 53%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 221 83% 53%;
+    /* VS Code Dark — fundo quase preto, texto cinza-claro, acentos de syntax highlighting.
+       É a identidade visual fixa do app (não há alternância claro/escuro). */
     --radius: 0.75rem;
+    --background: 0 0% 12%;
+    --foreground: 0 0% 83%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 90%;
+    --primary: 207 63% 58%;
+    --primary-foreground: 0 0% 8%;
+    --secondary: 0 0% 18%;
+    --secondary-foreground: 0 0% 85%;
+    --muted: 0 0% 16%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 0% 18%;
+    --accent-foreground: 0 0% 92%;
+    --destructive: 0 85% 62%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 25%;
+    --input: 0 0% 25%;
+    --ring: 207 63% 58%;
 
-    --vaga-livre: 142 71% 45%;
-    --vaga-ocupada: 0 84% 60%;
-    --vaga-reservada: 38 92% 50%;
-    --vaga-manutencao: 215 16% 47%;
-  }
-
-  .dark {
-    --background: 222 47% 8%;
-    --foreground: 210 40% 98%;
-    --card: 222 40% 11%;
-    --card-foreground: 210 40% 98%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 11%;
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217 33% 20%;
-    --input: 217 33% 20%;
-    --ring: 217 91% 60%;
-
-    --vaga-livre: 142 71% 45%;
-    --vaga-ocupada: 0 72% 51%;
-    --vaga-reservada: 38 92% 50%;
-    --vaga-manutencao: 215 16% 57%;
+    --vaga-livre: 168 53% 55%;
+    --vaga-ocupada: 17 47% 64%;
+    --vaga-reservada: 60 42% 66%;
+    --vaga-manutencao: 0 0% 45%;
   }
 
   * {
     @apply border-border;
   }
 
+  html {
+    /* Fundo fixo com blobs radiais desfocados + vignette escurecendo as bordas —
+       substitui a cor sólida sem depender de uma imagem externa. */
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(ellipse 80% 50% at 15% 20%, hsl(207 63% 30% / 0.25), transparent 60%),
+      radial-gradient(ellipse 70% 50% at 85% 15%, hsl(168 53% 30% / 0.2), transparent 60%),
+      radial-gradient(ellipse 60% 60% at 50% 100%, hsl(60 42% 25% / 0.12), transparent 60%),
+      radial-gradient(ellipse at center, transparent 40%, hsl(var(--background) / 0.9) 100%);
+    background-attachment: fixed;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground font-sans;
+    background: transparent;
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
 }

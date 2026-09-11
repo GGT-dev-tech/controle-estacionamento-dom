@@ -21,7 +21,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const links = isAdmin ? [...NAV_LINKS, ...NAV_LINKS_ADMIN] : NAV_LINKS
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen text-foreground">
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-y-2 px-4 py-4">
           <div>
