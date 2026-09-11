@@ -34,7 +34,7 @@ export function ReservaForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-border bg-card p-4">
+    <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
       <h2 className="text-sm font-semibold">Nova reserva</h2>
 
       <div className="grid gap-3 sm:grid-cols-2">

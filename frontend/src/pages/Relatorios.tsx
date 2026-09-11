@@ -63,7 +63,7 @@ export default function Relatorios() {
               />
             </div>
 
-            <div className="rounded-lg border border-border bg-card p-4">
+            <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
               <h3 className="mb-2 text-sm font-medium text-muted-foreground">Status das vagas</h3>
               <StatusVagasChart relatorio={relatorio} />
             </div>
@@ -71,7 +71,7 @@ export default function Relatorios() {
         )}
 
         {historico && (
-          <div className="rounded-lg border border-border bg-card p-4">
+          <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
             <h3 className="mb-2 text-sm font-medium text-muted-foreground">Entradas e saídas — últimos 7 dias</h3>
             <HistoricoChart dados={historico} />
           </div>

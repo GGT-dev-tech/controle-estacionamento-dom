@@ -21,7 +21,7 @@ export function DialogContent({
       <DialogPrimitive.Content
         className={cn(
           'fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2',
-          'rounded-lg border border-border bg-card p-5 text-card-foreground shadow-lg',
+          'rounded-lg border border-white/10 bg-card/60 backdrop-blur-2xl shadow-glass p-5 text-card-foreground',
           className,
         )}
       >

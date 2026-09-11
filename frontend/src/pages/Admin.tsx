@@ -51,7 +51,7 @@ function ClientesSection() {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
       <h3 className="mb-3 text-sm font-semibold">Clientes cadastrados (bot WhatsApp)</h3>
       <form onSubmit={handleSubmit} className="mb-3 flex flex-wrap gap-2">
         <Input name="nome" placeholder="Nome" required className="flex-1 min-w-[120px]" />
@@ -111,7 +111,7 @@ function DominiosSection() {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
       <h3 className="mb-3 text-sm font-semibold">Domínios autorizados</h3>
       <form onSubmit={handleSubmit} className="mb-3 flex gap-2">
         <Input name="dominio" placeholder="empresa.com" required className="flex-1" />
@@ -161,7 +161,7 @@ function AdminsSection() {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
       <h3 className="mb-3 text-sm font-semibold">E-mails com papel de admin</h3>
       <form onSubmit={handleSubmit} className="mb-3 flex gap-2">
         <Input name="email" type="email" placeholder="pessoa@empresa.com" required className="flex-1" />
@@ -200,7 +200,7 @@ function ReservasSection() {
   const cancelar = useCancelarReserva()
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 lg:col-span-2">
+    <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4 lg:col-span-2">
       <h3 className="mb-3 text-sm font-semibold">Reservas</h3>
       <ReservaForm />
       {isLoading && <p className="mt-3 text-sm text-muted-foreground">Carregando…</p>}
@@ -244,7 +244,7 @@ function AuditLogSection() {
   const { data: logs, isLoading } = useAuditLogs()
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
       <h3 className="mb-3 text-sm font-semibold">Log de auditoria</h3>
       {isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
       <div className="overflow-x-auto">
@@ -323,7 +323,7 @@ function VagasSection() {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
       <h3 className="mb-3 text-sm font-semibold">Gerenciar Vagas</h3>
       <form onSubmit={handleSubmit} className="mb-3 flex flex-wrap gap-2 items-end">
         <div className="flex-1 min-w-[80px]">

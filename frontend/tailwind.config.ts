@@ -57,6 +57,7 @@ export default {
         'glow-livre': '0 0 15px hsl(var(--vaga-livre) / 0.5)',
         'glow-ocupada': '0 0 15px hsl(var(--vaga-ocupada) / 0.5)',
         'glow-reservada': '0 0 15px hsl(var(--vaga-reservada) / 0.5)',
+        'glow-destructive': '0 0 15px hsl(var(--destructive) / 0.5)',
       },
     },
   },

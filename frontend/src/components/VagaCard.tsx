@@ -119,7 +119,7 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
   return (
     <div
       className={cn(
-        'flex flex-col gap-3 rounded-lg border border-border bg-card p-4 text-card-foreground',
+        'flex flex-col gap-3 rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4 text-card-foreground',
         !vaga.ativo && 'opacity-50',
       )}
     >

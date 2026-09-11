@@ -43,7 +43,7 @@ function DadosSection() {
   if (!cadastro) return null
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
       <h3 className="mb-3 text-sm font-semibold">Meus dados</h3>
       <form onSubmit={handleSubmit} className="space-y-3">
         <div className="space-y-1">
@@ -86,7 +86,7 @@ function VeiculosSection() {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
       <h3 className="mb-3 text-sm font-semibold">Meus veículos</h3>
       <form onSubmit={handleSubmit} className="mb-3 flex flex-wrap gap-2">
         <Input name="placa" placeholder="ABC1234" required className="w-28 uppercase" />
@@ -130,7 +130,7 @@ function MinhasReservasSection() {
   const minhasReservas = reservas?.filter((r) => r.telefone === cadastro?.telefone)
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
       <h3 className="mb-3 text-sm font-semibold">Minhas reservas</h3>
       {isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
       <div className="space-y-2">
