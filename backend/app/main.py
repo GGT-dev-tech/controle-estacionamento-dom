@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,13 +13,23 @@ from app.config import settings
 from app.database import get_db
 from app.routers import admin, clientes, movimentacoes, relatorios, reservas, vagas, webhook_whatsapp, ws
 from app.services import redis_cache
+from app.services.scheduler import loop_verificacao_reservas
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
-app = FastAPI(title="Estacionamento Dom Pagamentos API", version="2.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    tarefa = asyncio.create_task(loop_verificacao_reservas()) if settings.scheduler_habilitado else None
+    yield
+    if tarefa:
+        tarefa.cancel()
+
+
+app = FastAPI(title="Estacionamento Dom Pagamentos API", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

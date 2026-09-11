@@ -51,8 +51,16 @@ class Settings(BaseSettings):
     email_from: str = "noreply@dompagamentos.com.br"
     relatorio_destinatarios: str = ""  # e-mails separados por vírgula
 
-    # Tarefas agendadas (Railway Cron ou similar) — autenticadas via header X-Cron-Secret
+    # Tarefas agendadas (endpoints manuais, ex.: disparo ad-hoc) — autenticadas via
+    # header X-Cron-Secret
     cron_secret: str = ""
+
+    # Verificação periódica de reservas (expiração/lembrete) rodando no próprio processo —
+    # substitui um Cron Job externo, que no Railway tem piso de 5 min e depende de uma
+    # imagem/curl à parte. Cada worker gunicorn roda seu próprio loop; seguro mesmo com
+    # múltiplos workers porque as consultas usam SELECT ... FOR UPDATE SKIP LOCKED.
+    scheduler_habilitado: bool = True
+    scheduler_intervalo_segundos: int = 30
 
     # Auth0 Post-Login Action — autentica as chamadas de verificação de domínio/admin
     # via header X-Internal-Secret (o usuário ainda não tem JWT nesse ponto do login)
