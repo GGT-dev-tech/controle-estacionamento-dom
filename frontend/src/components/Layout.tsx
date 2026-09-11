@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 const NAV_LINKS = [
   { to: '/', label: 'Vagas' },
   { to: '/reservas', label: 'Reservas' },
+  { to: '/meu-cadastro', label: 'Meu cadastro' },
 ]
 
 const NAV_LINKS_ADMIN = [

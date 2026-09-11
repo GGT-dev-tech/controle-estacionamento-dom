@@ -4,12 +4,14 @@ import { useAuth0 } from '@auth0/auth0-react'
 import { useApiToken } from '@/auth/useApiToken'
 import { withProtection } from '@/auth/ProtectedRoute'
 import { RequireAdmin } from '@/auth/RequireAdmin'
+import { RequireCadastro } from '@/auth/RequireCadastro'
 import { iniciarSincronizacaoAutomatica } from '@/offline/sync'
 import Login from '@/pages/Login'
 import Home from '@/pages/Home'
 import Reservas from '@/pages/Reservas'
 import Relatorios from '@/pages/Relatorios'
 import Admin from '@/pages/Admin'
+import MeuCadastro from '@/pages/MeuCadastro'
 
 function RelatoriosPage() {
   return (
@@ -31,6 +33,7 @@ const ProtectedHome = withProtection(Home)
 const ProtectedReservas = withProtection(Reservas)
 const ProtectedRelatorios = withProtection(RelatoriosPage)
 const ProtectedAdmin = withProtection(AdminPage)
+const ProtectedMeuCadastro = withProtection(MeuCadastro)
 
 export default function App() {
   const { isLoading, isAuthenticated } = useAuth0()
@@ -49,13 +52,20 @@ export default function App() {
     )
   }
 
-  return (
+  const rotas = (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/reservas" element={<ProtectedReservas />} />
       <Route path="/relatorios" element={<ProtectedRelatorios />} />
       <Route path="/admin" element={<ProtectedAdmin />} />
+      <Route path="/meu-cadastro" element={<ProtectedMeuCadastro />} />
       <Route path="/*" element={<ProtectedHome />} />
     </Routes>
   )
+
+  // O gate de primeiro acesso só faz sentido pra quem já autenticou — evita uma
+  // chamada a /clientes/me (que sempre 401 sem token) na tela de login.
+  if (!isAuthenticated) return rotas
+
+  return <RequireCadastro>{rotas}</RequireCadastro>
 }
