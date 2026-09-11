@@ -141,6 +141,32 @@ async def _reserva_ativa_do_telefone(telefone: str, db: AsyncSession) -> Reserva
     ).scalars().first()
 
 
+def _texto_lista_vagas(vaga_ids: list[str], acao: str) -> str:
+    verbo = "reservar" if acao == "reservar" else "ocupar"
+    linhas = [f"🅿️ *Vagas disponíveis* — responda só com o *número* da vaga que quer {verbo}:", ""]
+    linhas += [f"{i}. {vaga_id}" for i, vaga_id in enumerate(vaga_ids, start=1)]
+    return "\n".join(linhas)
+
+
+async def _atualizar_lista_de_vagas(telefone: str, db: AsyncSession, acao: str) -> list[str]:
+    """Busca as vagas livres agora (não a lista antiga guardada no estado) e regrava o
+    estado com os índices atualizados. Chamado toda vez que mostramos a lista de novo —
+    inclusive num retry — porque, com duas pessoas no fluxo ao mesmo tempo, a vaga que
+    era a opção 3 pode já ter sido ocupada/reservada por outra enquanto uma delas decidia;
+    mostrar a lista antiga deixaria o número "certo" apontando pra algo que não existe mais.
+    """
+    vagas = (
+        await db.execute(
+            select(Vaga)
+            .where(Vaga.ativo.is_(True), Vaga.status == StatusVaga.livre)
+            .order_by(Vaga.andar, Vaga.numero)
+        )
+    ).scalars().all()
+    vaga_ids = [vaga.id for vaga in vagas]
+    await definir_estado(telefone, {"step": "escolhendo_vaga", "vagas": vaga_ids, "acao": acao})
+    return vaga_ids
+
+
 async def _iniciar_fluxo_vaga(telefone: str, db: AsyncSession, acao: str) -> str:
     """acao: "reservar" ou "ocupar" — mesma lista numerada de vagas livres nos dois casos,
     só muda o que acontece depois de escolher (pergunta o tempo, ou ocupa direto).
@@ -161,24 +187,12 @@ async def _iniciar_fluxo_vaga(telefone: str, db: AsyncSession, acao: str) -> str
                 f"*/ocupar {reserva_propria.vaga_id}* para confirmar a chegada."
             )
 
-    vagas = (
-        await db.execute(
-            select(Vaga)
-            .where(Vaga.ativo.is_(True), Vaga.status == StatusVaga.livre)
-            .order_by(Vaga.andar, Vaga.numero)
-        )
-    ).scalars().all()
-
-    if not vagas:
+    vaga_ids = await _atualizar_lista_de_vagas(telefone, db, acao)
+    if not vaga_ids:
+        await limpar_estado(telefone)
         return "😕 Não há vagas livres no momento. Tente novamente mais tarde."
 
-    vaga_ids = [vaga.id for vaga in vagas]
-    await definir_estado(telefone, {"step": "escolhendo_vaga", "vagas": vaga_ids, "acao": acao})
-
-    verbo = "reservar" if acao == "reservar" else "ocupar"
-    linhas = [f"🅿️ *Vagas disponíveis* — responda só com o *número* da vaga que quer {verbo}:", ""]
-    linhas += [f"{i}. {vaga_id}" for i, vaga_id in enumerate(vaga_ids, start=1)]
-    return "\n".join(linhas)
+    return _texto_lista_vagas(vaga_ids, acao)
 
 
 async def _apos_escolher_vaga_numerada(telefone: str, texto: str, estado: dict, db: AsyncSession) -> str:
@@ -197,9 +211,14 @@ async def _apos_escolher_vaga_numerada(telefone: str, texto: str, estado: dict, 
     if texto.isdigit():
         indice = int(texto)
         if not (1 <= indice <= len(vagas_listadas)):
-            return (
-                f"❌ Número inválido. Escolha um número de 1 a {len(vagas_listadas)} da lista "
-                "(ou envie */ajuda* para recomeçar)."
+            # A lista pode ter mudado desde que foi mostrada (outra pessoa ocupou/reservou
+            # enquanto esse cliente decidia) — reenvia atualizada em vez de só reclamar do número.
+            vaga_ids = await _atualizar_lista_de_vagas(telefone, db, acao)
+            if not vaga_ids:
+                await limpar_estado(telefone)
+                return "😕 Não há mais vagas livres no momento. Tente novamente mais tarde."
+            return "❌ Número inválido. A lista pode ter mudado — aqui está atualizada:\n\n" + _texto_lista_vagas(
+                vaga_ids, acao
             )
         vaga_id = vagas_listadas[indice - 1]
     else:
@@ -412,7 +431,16 @@ async def _reservar_vaga(
     except RecursoNaoEncontradoError:
         return f"❌ Vaga {vaga_id} não encontrada."
     except ConflitoOperacaoError:
-        return "Desculpe, essa vaga acabou de ser reservada por outra pessoa. Por favor, escolha outra."
+        # Concorrência real: outra pessoa reservou essa vaga entre a listagem e a
+        # confirmação — mostra a lista atualizada em vez de deixar o cliente sem saída.
+        vaga_ids = await _atualizar_lista_de_vagas(telefone, db, "reservar")
+        if not vaga_ids:
+            await limpar_estado(telefone)
+            return "😕 Essa vaga acabou de ser reservada por outra pessoa, e não há mais vagas livres agora."
+        return (
+            "😕 Essa vaga acabou de ser reservada por outra pessoa. Aqui está a lista atualizada:\n\n"
+            + _texto_lista_vagas(vaga_ids, "reservar")
+        )
     return f"✅ Vaga {vaga_id} reservada até {fim:%H:%M}. Envie */cancelar {vaga_id}* para desistir."
 
 
@@ -438,10 +466,15 @@ async def _ocupar_vaga(vaga_id: str, telefone: str, db: AsyncSession, placa_esco
         await aplicar_entrada(db, payload, f"whatsapp:{telefone}")
     except RecursoNaoEncontradoError:
         return f"❌ Vaga {vaga_id} não encontrada."
-    except ConflitoOperacaoError as e:
-        return f"❌ {e}"
-    except PermissaoNegadaError as e:
-        return f"❌ {e}"
+    except (ConflitoOperacaoError, PermissaoNegadaError) as e:
+        # Concorrência real: outra pessoa ocupou/reservou essa vaga entre a listagem e a
+        # confirmação (ou ela é de outro cliente) — mostra a lista atualizada em vez de
+        # deixar o cliente sem saída.
+        vaga_ids = await _atualizar_lista_de_vagas(telefone, db, "ocupar")
+        if not vaga_ids:
+            await limpar_estado(telefone)
+            return f"❌ {e}"
+        return f"❌ {e}\n\nAqui está a lista atualizada:\n\n" + _texto_lista_vagas(vaga_ids, "ocupar")
     return f"✅ Vaga {vaga_id} ocupada. Envie */ajuda* para ver os outros comandos."
 
 

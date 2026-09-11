@@ -674,7 +674,7 @@ async def test_comando_barra_sai_do_fluxo_de_escolha_de_vaga_e_atende_o_comando(
         "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "99")
     )
     assert "número inválido" in enviados[-1][1].lower()
-    assert "/ajuda" in enviados[-1][1]
+    assert "S2-49" in enviados[-1][1]  # lista atualizada, não só um aviso genérico
 
     resp_ajuda = await client_as_admin.post(
         "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "/ajuda")
@@ -745,3 +745,54 @@ async def test_comando_barra_sai_do_fluxo_de_confirmar_extensao_de_reserva(
     # a reserva não foi mexida (nem estendida, nem afetada) — só saiu do fluxo de pergunta
     reservas = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})).json()
     assert reservas[0]["status"] == "ativa"
+
+
+async def test_conflito_de_concorrencia_na_reserva_mostra_lista_atualizada(
+    client_as_admin, db_session, monkeypatch
+):
+    """Dois clientes escolhem a mesma vaga (opção 1) quase ao mesmo tempo — um deles
+    confirma primeiro, o outro esbarra no conflito só na hora de confirmar a duração
+    (aplicar_reserva é onde a concorrência é resolvida de verdade). Antes disso, o
+    segundo cliente via só um texto genérico "escolha outra", sem nenhuma lista — agora
+    a mensagem já vem com o painel atualizado (a vaga que sumiu não aparece mais)."""
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session, telefone="11911110000")
+    await _criar_cliente(db_session, telefone="11922220000")
+    await _criar_vaga(db_session, "S2-49")
+    await _criar_vaga(db_session, "S2-50")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    # Os dois começam o fluxo e escolhem a opção 1 (S2-49) antes de qualquer um confirmar.
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511911110000", "reservar"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511922220000", "reservar"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511911110000", "1"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511922220000", "1"))
+
+    # Cliente A confirma a duração primeiro — reserva S2-49 com sucesso.
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511911110000", "1"))
+    assert "reservada" in enviados[-1][1].lower()
+
+    # Cliente B confirma depois — ainda achava que a opção 1 era S2-49, mas ela já foi.
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511922220000", "1"))
+    resposta_b = enviados[-1][1]
+    assert "reservada por outra pessoa" in resposta_b.lower()
+    assert "lista atualizada" in resposta_b.lower()
+    assert "S2-50" in resposta_b
+    assert "1. S2-49" not in resposta_b  # a que sumiu não aparece mais como opção
+
+    # Cliente B consegue escolher a vaga restante imediatamente, sem reiniciar a conversa.
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511922220000", "1"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511922220000", "1"))
+    assert "reservada" in enviados[-1][1].lower()
+
+    reservas_50 = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-50"})).json()
+    assert len(reservas_50) == 1
+    assert reservas_50[0]["telefone"] == "11922220000"
