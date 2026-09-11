@@ -189,7 +189,11 @@ async def expirar_reservas_vencidas(db: AsyncSession) -> list[Reserva]:
     """
     agora = datetime.utcnow()
     vencidas = (
-        await db.execute(select(Reserva).where(Reserva.status == "ativa", Reserva.fim < agora))
+        await db.execute(
+            select(Reserva)
+            .where(Reserva.status == "ativa", Reserva.fim < agora)
+            .with_for_update(skip_locked=True)
+        )
     ).scalars().all()
 
     if not vencidas:
