@@ -87,15 +87,11 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
 
       <div className="mt-auto space-y-2 pt-1">
         {vaga.status === 'ocupada' ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            disabled={liberar.isPending}
-            onClick={() => liberar.mutate(vaga.id)}
-          >
-            {liberar.isPending ? 'Liberando…' : 'Liberar vaga'}
-          </Button>
+          <SwipeToConfirm
+            label="Deslize para liberar"
+            confirmingLabel="Liberando…"
+            onConfirm={handleConfirmarLiberar}
+          />
         ) : vaga.status === 'manutencao' ? (
           <p className="text-center text-xs text-muted-foreground">Indisponível</p>
         ) : podeAgir ? (
@@ -115,14 +111,11 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
 
             {acao === 'inicial' && reservaEhMinha && (
               <>
-                <Button
-                  size="sm"
-                  className="w-full"
-                  disabled={ocupar.isPending}
-                  onClick={handleConfirmarOcupar}
-                >
-                  {ocupar.isPending ? 'Confirmando…' : 'Confirmar chegada'}
-                </Button>
+                <SwipeToConfirm
+                  label="Deslize para confirmar chegada"
+                  confirmingLabel="Confirmando…"
+                  onConfirm={handleConfirmarOcupar}
+                />
                 <button
                   type="button"
                   onClick={handleCancelarReserva}
@@ -134,13 +127,7 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
               </>
             )}
             {acao === 'inicial' && !reservaEhMinha && (
-              <Button
-                size="sm"
-                className="w-full"
-                onClick={() => setAcao('escolhendo')}
-              >
-                Continuar
-              </Button>
+              <SwipeToConfirm label="Deslize para continuar" onConfirm={() => setAcao('escolhendo')} />
             )}
 
             {acao === 'escolhendo' && (
