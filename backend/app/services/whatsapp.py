@@ -64,6 +64,8 @@ async def processar_mensagem(telefone: str, mensagem: str, db: AsyncSession) -> 
             return await _apos_escolher_vaga(telefone, mensagem.strip().upper(), db)
         if step == "escolhendo_veiculo":
             return await _apos_escolher_veiculo(telefone, mensagem.strip(), estado.get("vaga_id", ""), db)
+        if step == "confirmando_reserva":
+            return await _confirmar_extensao_reserva(telefone, mensagem.strip().lower(), estado.get("reserva_id"), db)
         await limpar_estado(telefone)  # estado desconhecido/corrompido — não trava o usuário
 
     msg = mensagem.strip().lower()
@@ -203,6 +205,34 @@ async def _reservar_vaga(
     except ConflitoOperacaoError:
         return "Desculpe, essa vaga acabou de ser reservada por outra pessoa. Por favor, escolha outra."
     return f"✅ Vaga {vaga_id} reservada até {fim:%H:%M}. Envie */cancelar {vaga_id}* para desistir."
+
+
+_RESPOSTAS_AFIRMATIVAS = {"sim", "s", "confirmo", "confirmar", "yes"}
+
+
+async def _confirmar_extensao_reserva(
+    telefone: str, texto: str, reserva_id: int | None, db: AsyncSession
+) -> str:
+    """Resposta ao lembrete de vencimento (notificar_reserva_proxima_do_vencimento). Uma
+    resposta afirmativa estende o prazo pelo mesmo intervalo original e permite um novo
+    lembrete mais à frente; qualquer outra resposta só confirma que, sem chegar, a
+    expiração automática (expirar_reservas_vencidas) segue seu curso normalmente."""
+    await limpar_estado(telefone)
+    if not reserva_id:
+        return "Ok."
+
+    reserva = await db.get(Reserva, reserva_id)
+    if not reserva or reserva.status != "ativa":
+        return "Essa reserva não está mais ativa."
+
+    if texto in _RESPOSTAS_AFIRMATIVAS:
+        duracao_original = reserva.fim - reserva.inicio
+        reserva.fim = reserva.fim + duracao_original
+        reserva.lembrete_enviado = False
+        await db.commit()
+        return f"✅ Reserva da vaga {reserva.vaga_id} estendida até {reserva.fim:%H:%M}."
+
+    return "Tudo bem — se não chegar até o horário combinado, a vaga é liberada automaticamente."
 
 
 async def _cancelar_reserva(vaga_id: str, telefone: str, db: AsyncSession) -> str:

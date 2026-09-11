@@ -1,8 +1,11 @@
+from datetime import datetime, timedelta
+
 import pytest
 from sqlalchemy import select
 
 from app.models.cliente import Cliente
 from app.models.ocupante import TipoCliente
+from app.models.reserva import Reserva
 from app.models.vaga import StatusVaga, Vaga
 from app.models.veiculo import Veiculo
 
@@ -342,3 +345,77 @@ async def test_comando_classico_reservar_tambem_pergunta_veiculo_se_tiver_mais_d
     )
     assert resp.status_code == 200
     assert "ABC1234" in enviados[-1][1] and "XYZ5678" in enviados[-1][1]
+
+
+async def _criar_reserva_prestes_a_vencer(db_session, telefone: str = "5511999998888", vaga_id: str = "S2-49") -> int:
+    async with db_session() as db:
+        vaga = await db.get(Vaga, vaga_id)
+        vaga.status = StatusVaga.reservada
+        reserva = Reserva(
+            vaga_id=vaga_id,
+            nome="Cliente Teste",
+            telefone=telefone,
+            inicio=datetime.utcnow() - timedelta(minutes=10),
+            fim=datetime.utcnow() + timedelta(minutes=5),
+            status="ativa",
+            canal="whatsapp",
+            lembrete_enviado=True,
+        )
+        db.add(reserva)
+        await db.commit()
+        await db.refresh(reserva)
+        return reserva.id
+
+
+async def test_confirmar_extensao_de_reserva_perto_do_vencimento(client_as_admin, db_session, monkeypatch):
+    from app.routers import webhook_whatsapp
+    from app.services.whatsapp_estado import definir_estado
+
+    await _criar_cliente(db_session)
+    await _criar_vaga(db_session, "S2-49")
+    reserva_id = await _criar_reserva_prestes_a_vencer(db_session)
+    await definir_estado("5511999998888", {"step": "confirmando_reserva", "reserva_id": reserva_id})
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    resp = await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "sim"))
+    assert resp.status_code == 200
+    assert "estendida" in enviados[-1][1]
+
+    async with db_session() as db:
+        atualizada = await db.get(Reserva, reserva_id)
+        assert atualizada.fim > datetime.utcnow() + timedelta(minutes=10)
+        assert atualizada.lembrete_enviado is False
+
+
+async def test_resposta_negativa_ao_lembrete_nao_altera_a_reserva(client_as_admin, db_session, monkeypatch):
+    from app.routers import webhook_whatsapp
+    from app.services.whatsapp_estado import definir_estado
+
+    await _criar_cliente(db_session)
+    await _criar_vaga(db_session, "S2-49")
+    reserva_id = await _criar_reserva_prestes_a_vencer(db_session)
+    fim_original_resp = await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})
+    fim_original = fim_original_resp.json()[0]["fim"]
+    await definir_estado("5511999998888", {"step": "confirmando_reserva", "reserva_id": reserva_id})
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    resp = await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "não vou"))
+    assert resp.status_code == 200
+    assert "liberada automaticamente" in enviados[-1][1]
+
+    depois_resp = await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})
+    assert depois_resp.json()[0]["fim"] == fim_original
