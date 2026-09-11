@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { Route, Routes, Navigate } from 'react-router-dom'
 import { useAuth0 } from '@auth0/auth0-react'
 import { useApiToken } from '@/auth/useApiToken'
-import { withProtection } from '@/auth/ProtectedRoute'
 import { RequireAdmin } from '@/auth/RequireAdmin'
 import { RequireCadastro } from '@/auth/RequireCadastro'
 import { iniciarSincronizacaoAutomatica } from '@/offline/sync'
@@ -28,11 +27,6 @@ function AdminPage() {
   )
 }
 
-const ProtectedHome = withProtection(Home)
-const ProtectedRelatorios = withProtection(RelatoriosPage)
-const ProtectedAdmin = withProtection(AdminPage)
-const ProtectedMeuCadastro = withProtection(MeuCadastro)
-
 export default function App() {
   const { isLoading, isAuthenticated } = useAuth0()
   useApiToken()
@@ -53,10 +47,10 @@ export default function App() {
   const rotas = (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/relatorios" element={<ProtectedRelatorios />} />
-      <Route path="/admin" element={<ProtectedAdmin />} />
-      <Route path="/meu-cadastro" element={<ProtectedMeuCadastro />} />
-      <Route path="/*" element={<ProtectedHome />} />
+      <Route path="/relatorios" element={<RelatoriosPage />} />
+      <Route path="/admin" element={<AdminPage />} />
+      <Route path="/meu-cadastro" element={<MeuCadastro />} />
+      <Route path="/*" element={<Home />} />
     </Routes>
   )
 

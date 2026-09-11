@@ -1,21 +1,27 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { EntradaModal } from '@/components/EntradaModal'
 import { SwipeToConfirm } from '@/components/SwipeToConfirm'
+import { useIsAdmin } from '@/auth/useIsAdmin'
 import { PRAZOS_RESERVA, useVagaAcoes } from '@/hooks/useVagaAcoes'
 import { STATUS_DOT, STATUS_LABEL, STATUS_RING } from '@/lib/vagaStatus'
+import { useOnboardingPulado } from '@/stores/useOnboardingPulado'
 import type { Vaga } from '@/api/types'
 import { cn } from '@/lib/utils'
 
 export function VagaCard({ vaga }: { vaga: Vaga }) {
   const [modalAberto, setModalAberto] = useState(false)
+  const isAdmin = useIsAdmin()
+  const { definirPulado } = useOnboardingPulado()
   const {
     erro,
     acao,
     setAcao,
     setVeiculoEscolhidoId,
+    cadastro,
     veiculos,
     veiculoAtivo,
     reservaEhMinha,
@@ -187,10 +193,21 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
               </button>
             )}
           </>
-        ) : (
+        ) : isAdmin ? (
           <Button size="sm" className="w-full" onClick={() => setModalAberto(true)}>
             Ocupar vaga
           </Button>
+        ) : !cadastro ? (
+          <Button size="sm" className="w-full" onClick={() => definirPulado(false)}>
+            Completar cadastro para continuar
+          </Button>
+        ) : (
+          <div className="space-y-1 text-center">
+            <p className="text-xs text-muted-foreground">Adicione um veículo no seu cadastro para continuar.</p>
+            <Link to="/meu-cadastro" className="text-xs text-primary underline">
+              Ir para Meu Cadastro
+            </Link>
+          </div>
         )}
       </div>
 
