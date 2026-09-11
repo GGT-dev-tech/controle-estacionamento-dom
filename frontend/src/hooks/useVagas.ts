@@ -81,3 +81,21 @@ export function useLiberarVaga() {
     },
   })
 }
+
+import { criarVaga, excluirVaga } from '@/api/vagas'
+
+export function useCriarVaga() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: criarVaga,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vagas'] }),
+  })
+}
+
+export function useExcluirVaga() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: excluirVaga,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vagas'] }),
+  })
+}

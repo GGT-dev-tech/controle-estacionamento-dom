@@ -10,3 +10,12 @@ export async function obterVaga(vagaId: string): Promise<Vaga> {
   const { data } = await apiClient.get<Vaga>(`/vagas/${vagaId}`)
   return data
 }
+
+export async function criarVaga(payload: { numero: string; andar: string; posicao: string; tipo: 'padrao' | 'presa' }): Promise<Vaga> {
+  const { data } = await apiClient.post<Vaga>('/vagas', payload)
+  return data
+}
+
+export async function excluirVaga(vagaId: string): Promise<void> {
+  await apiClient.delete(`/vagas/${vagaId}`)
+}

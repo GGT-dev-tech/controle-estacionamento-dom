@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Layout } from '@/components/Layout'
+import { useVagas, useCriarVaga, useExcluirVaga } from '@/hooks/useVagas'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -148,6 +149,72 @@ function AuditLogSection() {
   )
 }
 
+
+
+function VagasSection() {
+  const { data: vagas, isLoading } = useVagas('')
+  const criar = useCriarVaga()
+  const excluir = useExcluirVaga()
+  const [erro, setErro] = useState<string | null>(null)
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErro(null)
+    const form = new FormData(event.currentTarget)
+    try {
+      await criar.mutateAsync({
+        numero: String(form.get('numero')),
+        andar: String(form.get('andar')),
+        posicao: String(form.get('posicao') || 'Normal'),
+        tipo: form.get('tipo') === 'presa' ? 'presa' : 'padrao'
+      })
+      event.currentTarget.reset()
+    } catch {
+      setErro('Não foi possível criar a vaga.')
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <h3 className="mb-3 text-sm font-semibold">Gerenciar Vagas</h3>
+      <form onSubmit={handleSubmit} className="mb-3 flex flex-wrap gap-2">
+        <Input name="numero" placeholder="Ex: 49" required className="flex-1 min-w-[80px]" />
+        <Input name="andar" placeholder="Ex: S2" required className="flex-1 min-w-[80px]" />
+        <select name="tipo" className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm">
+          <option value="padrao">Padrão</option>
+          <option value="presa">Presa</option>
+        </select>
+        <Input name="posicao" placeholder="Opcional (Ex: VAGA DE TRÁS)" className="flex-[2] min-w-[120px]" />
+        <Button type="submit" size="sm" disabled={criar.isPending}>
+          Criar
+        </Button>
+      </form>
+      {erro && <p className="mb-2 text-sm text-destructive">{erro}</p>}
+      
+      <h4 className="mt-4 mb-2 text-xs font-semibold text-muted-foreground">Vagas Cadastradas</h4>
+      {isLoading ? <p className="text-sm text-muted-foreground">Carregando...</p> : (
+        <ul className="space-y-1 max-h-64 overflow-y-auto pr-2">
+          {vagas?.map((v) => (
+            <li key={v.id} className="flex items-center justify-between rounded-md bg-secondary px-3 py-1.5 text-sm">
+              <span className="font-medium">{v.andar}-{v.numero}</span>
+              <span className="text-xs text-muted-foreground ml-2">{v.tipo === 'presa' ? 'Presa' : 'Padrão'} {v.posicao !== 'Normal' ? `(${v.posicao})` : ''}</span>
+              <button
+                type="button"
+                onClick={() => excluir.mutate(v.id)}
+                disabled={excluir.isPending}
+                className="text-xs text-muted-foreground hover:text-destructive ml-auto"
+              >
+                Excluir
+              </button>
+            </li>
+          ))}
+          {vagas?.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma vaga cadastrada.</p>}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export default function Admin() {
   return (
     <Layout>
@@ -156,6 +223,7 @@ export default function Admin() {
         <div className="grid gap-6 lg:grid-cols-2">
           <DominiosSection />
           <AdminsSection />
+          <VagasSection />
         </div>
         <AuditLogSection />
       </div>
