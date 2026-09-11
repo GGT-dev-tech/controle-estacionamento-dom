@@ -14,6 +14,7 @@ class _FakeResponse:
 
 class _FakeAsyncClient:
     chamadas: list[dict] = []
+    falhas_restantes = 0  # quantas próximas chamadas devem levantar erro antes de suceder
 
     def __init__(self, *args, **kwargs) -> None:
         pass
@@ -26,6 +27,9 @@ class _FakeAsyncClient:
 
     async def post(self, url, json, headers):
         _FakeAsyncClient.chamadas.append(json)
+        if _FakeAsyncClient.falhas_restantes > 0:
+            _FakeAsyncClient.falhas_restantes -= 1
+            raise RuntimeError("Falha simulada (rate limiting)")
         return _FakeResponse()
 
 
@@ -35,7 +39,14 @@ def _fake_http(monkeypatch):
 
     monkeypatch.setattr(settings, "evolution_api_url", "https://evolution.example.com")
     _FakeAsyncClient.chamadas = []
+    _FakeAsyncClient.falhas_restantes = 0
     monkeypatch.setattr(whatsapp.httpx, "AsyncClient", _FakeAsyncClient)
+    # Sem isso, o teste de retentativa esperaria os 3s reais entre tentativas.
+    monkeypatch.setattr(whatsapp.asyncio, "sleep", lambda *_args, **_kwargs: _sem_espera())
+
+
+async def _sem_espera() -> None:
+    return None
 
 
 async def test_enviar_mensagem_nao_duplica_55_quando_telefone_ja_vem_com_pais():
@@ -55,3 +66,19 @@ async def test_enviar_mensagem_normaliza_nono_digito_ausente():
     # remoteJid real capturado em produção: 55 + DDD + 8 dígitos (sem o 9).
     await whatsapp.enviar_mensagem("554791190758", "oi")
     assert _FakeAsyncClient.chamadas[-1]["number"] == "5547991190758@s.whatsapp.net"
+
+
+async def test_enviar_mensagem_tenta_de_novo_apos_falha_e_da_certo(monkeypatch):
+    # Confirmado em produção: o mesmo número que falha (rate limiting em rajada) costuma
+    # funcionar numa segunda tentativa logo em seguida.
+    _FakeAsyncClient.falhas_restantes = 1
+    ok = await whatsapp.enviar_mensagem("11999998888", "oi")
+    assert ok is True
+    assert len(_FakeAsyncClient.chamadas) == 2
+
+
+async def test_enviar_mensagem_desiste_apos_2_falhas():
+    _FakeAsyncClient.falhas_restantes = 2
+    ok = await whatsapp.enviar_mensagem("11999998888", "oi")
+    assert ok is False
+    assert len(_FakeAsyncClient.chamadas) == 2

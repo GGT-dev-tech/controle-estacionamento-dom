@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timedelta
 
@@ -18,6 +19,7 @@ from app.services.whatsapp_estado import definir_estado, limpar_estado, obter_es
 logger = logging.getLogger(__name__)
 
 RESERVA_DURACAO_PADRAO = timedelta(hours=2)
+_ESPERA_ANTES_DE_TENTAR_DE_NOVO_SEGUNDOS = 3.0
 
 
 def normalizar_telefone(bruto: str) -> str:
@@ -49,6 +51,10 @@ async def enviar_mensagem(telefone: str, texto: str) -> bool:
     JID de destino. Sem isso, chamadas vindas do fluxo do bot (que carregam o telefone cru
     do webhook adiante) duplicavam o "55" (`5555...`), gerando um número inválido e a
     mensagem nunca saía — mesmo com o resto do fluxo funcionando perfeitamente.
+
+    Tenta 2 vezes antes de desistir: confirmado em produção que o WhatsApp/Evolution API
+    rejeita (400) envios em rajada mesmo pra números válidos e ativos (rate limiting) — o
+    mesmo número que falha costuma funcionar numa segunda tentativa logo em seguida.
     """
     if not settings.evolution_api_url:
         logger.warning("Evolution API não configurada — mensagem não enviada.")
@@ -59,14 +65,19 @@ async def enviar_mensagem(telefone: str, texto: str) -> bool:
     payload = {"number": f"55{numero}@s.whatsapp.net", "text": texto}
     headers = {"apikey": settings.evolution_api_key, "Content-Type": "application/json"}
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            r = await client.post(url, json=payload, headers=headers)
-            r.raise_for_status()
-            return True
-        except Exception:
-            logger.exception("Falha ao enviar mensagem WhatsApp")
-            return False
+    for tentativa in (1, 2):
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                r = await client.post(url, json=payload, headers=headers)
+                r.raise_for_status()
+                return True
+            except Exception:
+                if tentativa == 1:
+                    logger.warning("Falha ao enviar mensagem WhatsApp (tentativa 1/2) — tentando de novo.")
+                    await asyncio.sleep(_ESPERA_ANTES_DE_TENTAR_DE_NOVO_SEGUNDOS)
+                else:
+                    logger.exception("Falha ao enviar mensagem WhatsApp (após 2 tentativas)")
+    return False
 
 
 async def processar_mensagem(telefone: str, mensagem: str, db: AsyncSession) -> str:
@@ -77,7 +88,7 @@ async def processar_mensagem(telefone: str, mensagem: str, db: AsyncSession) -> 
     if estado:
         step = estado.get("step")
         if step == "escolhendo_vaga":
-            return await _apos_escolher_vaga(telefone, mensagem.strip().upper(), db)
+            return await _apos_escolher_vaga_numerada(telefone, mensagem, estado, db)
         if step == "escolhendo_veiculo":
             return await _apos_escolher_veiculo(telefone, mensagem.strip(), estado.get("vaga_id", ""), db)
         if step == "escolhendo_tempo":
@@ -105,11 +116,35 @@ async def _iniciar_fluxo_reserva(telefone: str, db: AsyncSession) -> str:
     if not vagas:
         return "😕 Não há vagas livres no momento. Tente novamente mais tarde."
 
-    await definir_estado(telefone, {"step": "escolhendo_vaga"})
+    vaga_ids = [vaga.id for vaga in vagas]
+    await definir_estado(telefone, {"step": "escolhendo_vaga", "vagas": vaga_ids})
 
-    linhas = ["🅿️ *Vagas disponíveis* — responda com o código da vaga que deseja reservar:", ""]
-    linhas += [f"🟢 {vaga.id}" for vaga in vagas]
+    linhas = ["🅿️ *Vagas disponíveis* — responda só com o *número* da vaga desejada:", ""]
+    linhas += [f"{i}. {vaga_id}" for i, vaga_id in enumerate(vaga_ids, start=1)]
     return "\n".join(linhas)
+
+
+async def _apos_escolher_vaga_numerada(telefone: str, texto: str, estado: dict, db: AsyncSession) -> str:
+    """A lista de _iniciar_fluxo_reserva é numerada — aceita o número da opção (o caminho
+    principal, bem mais rápido de digitar que o código da vaga) ou o código da vaga direto
+    (pra quem já sabe de cor), sem precisar reiniciar a conversa se digitar do outro jeito.
+    """
+    texto = texto.strip()
+    vagas_listadas: list[str] = estado.get("vagas", [])
+
+    if not vagas_listadas:
+        await limpar_estado(telefone)
+        return "❌ Essa lista expirou. Envie *reservar* para ver as vagas disponíveis de novo."
+
+    if texto.isdigit():
+        indice = int(texto)
+        if not (1 <= indice <= len(vagas_listadas)):
+            return f"❌ Número inválido. Escolha um número de 1 a {len(vagas_listadas)} da lista."
+        vaga_id = vagas_listadas[indice - 1]
+    else:
+        vaga_id = texto.upper()
+
+    return await _apos_escolher_vaga(telefone, vaga_id, db)
 
 
 async def _veiculos_do_cliente(telefone: str, db: AsyncSession) -> tuple[Cliente | None, list[Veiculo]]:
@@ -214,19 +249,31 @@ async def _dados_reserva_do_cliente(telefone: str, db: AsyncSession) -> tuple[st
     return cliente.nome, placa_auto, cliente.email
 
 
+def _argumento(mensagem: str) -> str:
+    """Tudo depois do comando (ex.: "/r s2-49" -> "s2-49"; "/r" sozinho -> "")."""
+    partes = mensagem.strip().split(maxsplit=1)
+    return partes[1].strip() if len(partes) > 1 else ""
+
+
 async def processar_comando(telefone: str, mensagem: str, db: AsyncSession) -> str:
     msg = mensagem.strip().lower()
+    comando = msg.split(maxsplit=1)[0] if msg else ""
+    argumento = _argumento(mensagem)
 
-    if msg in ("/vagas", "/vagas s2", "/vagas g2"):
+    # Atalhos curtos (/r, /v, /c, /s, /a) ao lado dos nomes completos — digitar o comando
+    # inteiro toda vez (ex.: "/reservar") é mais atrito do que precisa pra quem já conhece o bot.
+    if comando in ("/vagas", "/v"):
         andar = "S2" if "s2" in msg else ("G2" if "g2" in msg else None)
         return await _listar_vagas(andar, db)
-    if msg.startswith("/reservar "):
-        return await _apos_escolher_vaga(telefone, mensagem[10:].strip().upper(), db)
-    if msg.startswith("/cancelar "):
-        return await _cancelar_reserva(mensagem[10:].strip().upper(), telefone, db)
-    if msg.startswith("/status "):
-        return await _status_placa(mensagem[8:].strip().upper(), db)
-    if msg == "/ajuda":
+    if comando in ("/reservar", "/r"):
+        if argumento:
+            return await _apos_escolher_vaga(telefone, argumento.upper(), db)
+        return await _iniciar_fluxo_reserva(telefone, db)
+    if comando in ("/cancelar", "/c") and argumento:
+        return await _cancelar_reserva(argumento.upper(), telefone, db)
+    if comando in ("/status", "/s") and argumento:
+        return await _status_placa(argumento.upper(), db)
+    if comando in ("/ajuda", "/a", "/menu"):
         return _ajuda()
     return "❓ Comando não reconhecido. Envie */ajuda* para ver os comandos."
 
@@ -330,12 +377,12 @@ async def _status_placa(placa: str, db: AsyncSession) -> str:
 def _ajuda() -> str:
     return (
         "🅿️ *Dom Estacionamento — Comandos*\n\n"
-        "*/vagas* — Ver vagas disponíveis\n"
+        "*/vagas* (ou */v*) — Ver vagas disponíveis\n"
         "*/vagas S2* — Vagas do Subsolo 2\n"
         "*/vagas G2* — Vagas da Garagem 2\n"
-        "*/reservar S2-49* — Reservar vaga (escolhe o tempo em seguida)\n"
-        "*reservar* — inicia uma reserva por conversa (escolha a vaga na lista)\n"
-        "*/cancelar S2-49* — Cancelar sua reserva\n"
-        "*/status ABC1234* — Verificar placa\n\n"
+        "*/reservar* (ou */r*) — lista as vagas livres numeradas, responda só com o número\n"
+        "*/reservar S2-49* — Reservar direto pelo código (escolhe o tempo em seguida)\n"
+        "*/cancelar S2-49* (ou */c S2-49*) — Cancelar sua reserva\n"
+        "*/status ABC1234* (ou */s ABC1234*) — Verificar placa\n\n"
         "_Dom Pagamentos • Estacionamento_"
     )

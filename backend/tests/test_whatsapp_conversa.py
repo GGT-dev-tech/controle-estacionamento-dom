@@ -89,7 +89,71 @@ async def test_reservar_por_texto_livre_lista_vagas_e_seta_estado(client_as_admi
 
     # o estado é indexado pelo telefone "bruto" (como chega do remoteJid), igual ao
     # resto de services/whatsapp.py — só Cliente.telefone é normalizado (Fase 1)
-    assert await obter_estado("5511999998888") == {"step": "escolhendo_vaga"}
+    assert await obter_estado("5511999998888") == {"step": "escolhendo_vaga", "vagas": ["S2-49"]}
+
+
+async def test_reservar_escolhendo_pelo_numero_da_lista(client_as_admin, db_session, monkeypatch):
+    """Caminho principal da lista numerada: responde só com o número, não o código da
+    vaga — bem mais rápido de digitar, e é o que a mensagem da lista já instrui a fazer."""
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_vaga(db_session, "S2-49")
+    await _criar_vaga(db_session, "S2-50")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
+    assert "1. S2-49" in enviados[-1][1]
+    assert "2. S2-50" in enviados[-1][1]
+
+    resp = await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "2"))
+    assert resp.status_code == 200
+    assert "por quanto tempo" in enviados[-1][1].lower()
+
+    resp_tempo = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1")
+    )
+    assert "reservada" in enviados[-1][1]
+
+    reservas = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-50"})).json()
+    assert len(reservas) == 1  # escolheu a opção 2 (S2-50), não a 1 (S2-49)
+
+
+async def test_numero_fora_do_intervalo_pede_de_novo_sem_perder_a_lista(client_as_admin, db_session, monkeypatch):
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
+    resp = await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "99"))
+    assert resp.status_code == 200
+    assert "número inválido" in enviados[-1][1].lower()
+
+    from app.services.whatsapp_estado import obter_estado
+
+    # a lista continua disponível — não precisa reiniciar a conversa por causa de um número errado
+    assert await obter_estado("5511999998888") == {"step": "escolhendo_vaga", "vagas": ["S2-49"]}
+
+    resp_certo = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1")
+    )
+    assert "por quanto tempo" in enviados[-1][1].lower()
 
 
 async def test_fluxo_completo_reservar_conversa_confirma_vaga(client_as_admin, db_session, monkeypatch):

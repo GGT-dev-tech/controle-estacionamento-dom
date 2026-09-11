@@ -84,3 +84,26 @@ async def test_comando_desconhecido(client_as_admin, db_session):
     async with db_session() as session:
         resposta = await processar_comando("11999998888", "/oi", session)
     assert "não reconhecido" in resposta.lower()
+
+
+async def test_atalhos_curtos_dos_comandos(client_as_admin, db_session):
+    await _criar_vaga(client_as_admin, "S2-52")
+    await client_as_admin.post(
+        "/movimentacoes/entrada",
+        json={"vaga_id": "S2-52", "nome": "Ana", "placa": "BBB2222", "veiculo": "Onix", "tipo_cliente": "rotativo"},
+    )
+
+    async with db_session() as session:
+        assert "Comandos" in await processar_comando("11999998888", "/a", session)
+    async with db_session() as session:
+        assert "S2-52" in await processar_comando("11999998888", "/v", session)
+    async with db_session() as session:
+        assert "S2-52" in await processar_comando("11999998888", "/s BBB2222", session)
+
+
+async def test_atalho_r_lista_vagas_igual_ao_reservar_sem_argumento(client_as_admin, db_session):
+    await _criar_vaga(client_as_admin, "S2-53")
+    async with db_session() as session:
+        resposta = await processar_comando("11999998888", "/r", session)
+    assert "S2-53" in resposta
+    assert "número" in resposta.lower()
