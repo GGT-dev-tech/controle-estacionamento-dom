@@ -13,6 +13,6 @@ class Veiculo(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"))
-    placa: Mapped[str] = mapped_column(String(10), unique=True, index=True)
+    placa: Mapped[str | None] = mapped_column(String(10), unique=True, index=True, nullable=True)
     veiculo: Mapped[str] = mapped_column(String(100))
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

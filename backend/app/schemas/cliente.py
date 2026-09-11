@@ -22,7 +22,7 @@ class ClienteRead(BaseModel):
 
 
 class VeiculoCreate(BaseModel):
-    placa: str
+    placa: str | None = None
     veiculo: str
 
 
@@ -30,7 +30,7 @@ class VeiculoRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    placa: str
+    placa: str | None
     veiculo: str
     criado_em: UTCDatetime
 

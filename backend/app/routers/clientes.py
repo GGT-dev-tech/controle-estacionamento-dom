@@ -136,8 +136,8 @@ async def adicionar_meu_veiculo(
     user: dict = Depends(get_current_user),
 ) -> Veiculo:
     cliente = await _obter_meu_cliente(db, user["sub"])
-    placa = payload.placa.strip().upper()
-    if (await db.execute(select(Veiculo).where(Veiculo.placa == placa))).scalar_one_or_none():
+    placa = payload.placa.strip().upper() if payload.placa else None
+    if placa and (await db.execute(select(Veiculo).where(Veiculo.placa == placa))).scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Já existe um veículo cadastrado com esta placa.")
     veiculo = Veiculo(cliente_id=cliente.id, placa=placa, veiculo=payload.veiculo)
     db.add(veiculo)

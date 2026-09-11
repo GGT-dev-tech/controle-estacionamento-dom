@@ -133,6 +133,21 @@ async def test_adicionar_e_remover_veiculo(client_as_operador):
     assert len(meu2.json()["veiculos"]) == 0
 
 
+async def test_placa_e_opcional_e_dois_veiculos_sem_placa_nao_conflitam(client_as_operador):
+    await client_as_operador.post("/clientes/me", json={"nome": "Fulano", "telefone": "11999998888"})
+
+    resp1 = await client_as_operador.post("/clientes/me/veiculos", json={"veiculo": "Bike"})
+    assert resp1.status_code == 201
+    assert resp1.json()["placa"] is None
+
+    resp2 = await client_as_operador.post("/clientes/me/veiculos", json={"veiculo": "Patinete"})
+    assert resp2.status_code == 201
+    assert resp2.json()["placa"] is None
+
+    meu = await client_as_operador.get("/clientes/me")
+    assert len(meu.json()["veiculos"]) == 2
+
+
 async def test_nao_remove_veiculo_de_outro_cadastro(client_as_admin):
     _autenticar_como(_ADMIN)
     await client_as_admin.post("/clientes/me", json={"nome": "Admin", "telefone": "11933334444"})
