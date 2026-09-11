@@ -23,12 +23,12 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen text-foreground">
       <header className="border-b border-border">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-y-2 px-4 py-4">
-          <div>
+        <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <h1 className="text-lg font-semibold">Estacionamento Dom</h1>
-            <p className="text-xs text-muted-foreground">Olá, {user?.name ?? user?.email}</p>
+            <p className="truncate text-xs text-muted-foreground">Olá, {user?.name ?? user?.email}</p>
           </div>
-          <nav className="flex flex-wrap items-center gap-3">
+          <nav className="flex flex-wrap items-center gap-2 sm:gap-3">
             <StatusConexao />
             {links.map((link) => (
               <NavLink
@@ -47,7 +47,7 @@ export function Layout({ children }: { children: ReactNode }) {
             ))}
             <button
               onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
-              className="ml-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+              className="ml-auto rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground sm:ml-2"
             >
               Sair
             </button>
