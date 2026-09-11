@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.routers import admin, movimentacoes, relatorios, reservas, vagas, webhook_whatsapp, ws
+from app.routers import admin, clientes, movimentacoes, relatorios, reservas, vagas, webhook_whatsapp, ws
 from app.services import redis_cache
 
 logging.basicConfig(
@@ -70,5 +70,6 @@ app.include_router(reservas.router)
 app.include_router(movimentacoes.router)
 app.include_router(relatorios.router)
 app.include_router(admin.router)
+app.include_router(clientes.router)
 app.include_router(webhook_whatsapp.router)
 app.include_router(ws.router)

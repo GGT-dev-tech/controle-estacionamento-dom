@@ -16,6 +16,7 @@ from app.models import (  # noqa: F401 — registra os modelos
     ocupante,
     reserva,
     vaga,
+    veiculo,
 )
 
 config = context.config

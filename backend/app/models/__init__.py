@@ -7,6 +7,7 @@ from app.models.movimentacao import Movimentacao
 from app.models.ocupante import Ocupante
 from app.models.reserva import Reserva
 from app.models.vaga import StatusVaga, Vaga
+from app.models.veiculo import Veiculo
 
 __all__ = [
     "Base",
@@ -19,4 +20,5 @@ __all__ = [
     "DominioAutorizado",
     "AdminEmail",
     "Cliente",
+    "Veiculo",
 ]
