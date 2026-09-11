@@ -64,6 +64,8 @@ async def processar_mensagem(telefone: str, mensagem: str, db: AsyncSession) -> 
             return await _apos_escolher_vaga(telefone, mensagem.strip().upper(), db)
         if step == "escolhendo_veiculo":
             return await _apos_escolher_veiculo(telefone, mensagem.strip(), estado.get("vaga_id", ""), db)
+        if step == "escolhendo_tempo":
+            return await _apos_escolher_tempo(telefone, mensagem.strip(), estado, db)
         if step == "confirmando_reserva":
             return await _confirmar_extensao_reserva(telefone, mensagem.strip().lower(), estado.get("reserva_id"), db)
         await limpar_estado(telefone)  # estado desconhecido/corrompido — não trava o usuário
@@ -117,8 +119,8 @@ async def _apos_escolher_vaga(telefone: str, vaga_id: str, db: AsyncSession) -> 
         linhas += [f"• {v.placa} — {v.veiculo}" for v in veiculos]
         return "\n".join(linhas)
 
-    await limpar_estado(telefone)
-    return await _reservar_vaga(vaga_id, telefone, db)
+    placa_auto = veiculos[0].placa if len(veiculos) == 1 else None
+    return await _perguntar_tempo(telefone, vaga_id, placa_auto, db)
 
 
 async def _apos_escolher_veiculo(telefone: str, texto: str, vaga_id: str, db: AsyncSession) -> str:
@@ -132,9 +134,44 @@ async def _apos_escolher_veiculo(telefone: str, texto: str, vaga_id: str, db: As
     if not escolhido:
         return "❌ Não reconheci essa placa entre seus veículos cadastrados. Envie a placa exatamente como está cadastrada."
 
-    await limpar_estado(telefone)
-    return await _reservar_vaga(vaga_id, telefone, db, placa_escolhida=escolhido.placa)
+    return await _perguntar_tempo(telefone, vaga_id, escolhido.placa, db)
 
+
+async def _perguntar_tempo(telefone: str, vaga_id: str, placa: str | None, db: AsyncSession) -> str:
+    await definir_estado(telefone, {"step": "escolhendo_tempo", "vaga_id": vaga_id, "placa": placa})
+    return (
+        f"⏱ Quase lá! Por quanto tempo deseja reservar a vaga {vaga_id}?\n\n"
+        "Responda com o número da opção:\n"
+        "1️⃣ - 15 minutos\n"
+        "2️⃣ - 30 minutos\n"
+        "3️⃣ - 1 hora\n"
+        "4️⃣ - 2 horas"
+    )
+
+async def _apos_escolher_tempo(telefone: str, texto: str, estado: dict, db: AsyncSession) -> str:
+    vaga_id = estado.get("vaga_id")
+    placa = estado.get("placa")
+    if not vaga_id:
+        await limpar_estado(telefone)
+        return "❌ Algo deu errado com sua reserva. Envie *reservar* para começar de novo."
+
+    from datetime import timedelta
+    txt = texto.lower().strip()
+    duracao = None
+    
+    if txt == "1" or txt == "15" or "15 minutos" in txt or "15min" in txt:
+        duracao = timedelta(minutes=15)
+    elif txt == "2" or txt == "30" or "30 minutos" in txt or "30min" in txt:
+        duracao = timedelta(minutes=30)
+    elif txt == "3" or txt == "1" or "1 hora" in txt or "1h" in txt:
+        duracao = timedelta(hours=1)
+    elif txt == "4" or txt == "2" or "2 horas" in txt or "2h" in txt:
+        duracao = timedelta(hours=2)
+    else:
+        return "❌ Opção inválida. Responda com 1, 2, 3 ou 4 correspondente ao tempo desejado."
+
+    await limpar_estado(telefone)
+    return await _reservar_vaga(vaga_id, telefone, db, placa_escolhida=placa, duracao=duracao)
 
 async def _dados_reserva_do_cliente(telefone: str, db: AsyncSession) -> tuple[str, str | None, str | None]:
     """(nome, placa, email) a partir do cadastro (Cliente + Veiculo) pra preencher a
@@ -182,11 +219,12 @@ async def _listar_vagas(andar: str | None, db: AsyncSession) -> str:
     return "\n".join(linhas)
 
 
+from datetime import timedelta
 async def _reservar_vaga(
-    vaga_id: str, telefone: str, db: AsyncSession, placa_escolhida: str | None = None
+    vaga_id: str, telefone: str, db: AsyncSession, placa_escolhida: str | None = None, duracao: timedelta | None = None
 ) -> str:
     inicio = datetime.utcnow()
-    fim = inicio + RESERVA_DURACAO_PADRAO
+    fim = inicio + (duracao if duracao else RESERVA_DURACAO_PADRAO)
     nome, placa_auto, email = await _dados_reserva_do_cliente(telefone, db)
     payload = ReservaCreate(
         vaga_id=vaga_id,
