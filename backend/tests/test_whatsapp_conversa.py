@@ -89,7 +89,11 @@ async def test_reservar_por_texto_livre_lista_vagas_e_seta_estado(client_as_admi
 
     # o estado é indexado pelo telefone "bruto" (como chega do remoteJid), igual ao
     # resto de services/whatsapp.py — só Cliente.telefone é normalizado (Fase 1)
-    assert await obter_estado("5511999998888") == {"step": "escolhendo_vaga", "vagas": ["S2-49"]}
+    assert await obter_estado("5511999998888") == {
+        "step": "escolhendo_vaga",
+        "vagas": ["S2-49"],
+        "acao": "reservar",
+    }
 
 
 async def test_reservar_escolhendo_pelo_numero_da_lista(client_as_admin, db_session, monkeypatch):
@@ -148,7 +152,11 @@ async def test_numero_fora_do_intervalo_pede_de_novo_sem_perder_a_lista(client_a
     from app.services.whatsapp_estado import obter_estado
 
     # a lista continua disponível — não precisa reiniciar a conversa por causa de um número errado
-    assert await obter_estado("5511999998888") == {"step": "escolhendo_vaga", "vagas": ["S2-49"]}
+    assert await obter_estado("5511999998888") == {
+        "step": "escolhendo_vaga",
+        "vagas": ["S2-49"],
+        "acao": "reservar",
+    }
 
     resp_certo = await client_as_admin.post(
         "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1")
@@ -521,3 +529,121 @@ async def test_resposta_negativa_ao_lembrete_nao_altera_a_reserva(client_as_admi
 
     depois_resp = await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})
     assert depois_resp.json()[0]["fim"] == fim_original
+
+
+async def test_ocupar_vaga_livre_direto_pelo_codigo(client_as_admin, db_session, monkeypatch):
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_veiculo(db_session, "11999998888", "ABC1234", "Fiat Argo")
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    resp = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "/ocupar S2-49")
+    )
+    assert resp.status_code == 200
+    assert "ocupada" in enviados[-1][1].lower()
+
+    vaga = (await client_as_admin.get("/vagas/S2-49")).json()
+    assert vaga["status"] == "ocupada"
+    assert vaga["ocupante"]["placa"] == "ABC1234"
+
+
+async def test_ocupar_sem_veiculo_cadastrado_pede_pra_completar_cadastro(client_as_admin, db_session, monkeypatch):
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    resp = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "/ocupar S2-49")
+    )
+    assert resp.status_code == 200
+    assert "veículo cadastrado" in enviados[-1][1].lower()
+
+    vaga = (await client_as_admin.get("/vagas/S2-49")).json()
+    assert vaga["status"] == "livre"
+
+
+async def test_ocupar_sem_argumento_confirma_chegada_de_reserva_ativa(client_as_admin, db_session, monkeypatch):
+    """/ocupar sozinho, com uma reserva ativa em nome do cliente, confirma a chegada nela
+    direto — nem precisa escolher a vaga, é a mesma coisa que "confirmar chegada" no app."""
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_veiculo(db_session, "11999998888", "ABC1234", "Fiat Argo")
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1"))
+    assert "reservada" in enviados[-1][1].lower()
+
+    resp = await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "/ocupar"))
+    assert resp.status_code == 200
+    assert "ocupada" in enviados[-1][1].lower()
+
+    vaga = (await client_as_admin.get("/vagas/S2-49")).json()
+    assert vaga["status"] == "ocupada"
+
+
+async def test_cliente_nao_ocupa_reserva_de_outro_cliente_via_whatsapp(client_as_admin, db_session, monkeypatch):
+    """Mesma proteção que já existe pelo app (services/sync.py: _cliente_do_operador)
+    agora também vale pelo bot — antes, o sub sintético "whatsapp:<telefone>" nunca batia
+    com nenhum Cliente.auth0_sub e a checagem tratava qualquer cliente pelo WhatsApp como
+    staff sem restrição."""
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session, telefone="11911110000")
+    await _criar_veiculo(db_session, "11911110000", "AAA1111", "Onix")
+    await _criar_cliente(db_session, telefone="11922220000")
+    await _criar_veiculo(db_session, "11922220000", "BBB2222", "Gol")
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    # Cliente A reserva.
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511911110000", "reservar"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511911110000", "1"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511911110000", "1"))
+    assert "reservada" in enviados[-1][1].lower()
+
+    # Cliente B tenta ocupar por cima, com o próprio veículo (placa diferente da reserva).
+    resp = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511922220000", "/ocupar S2-49")
+    )
+    assert resp.status_code == 200
+    assert "reservada por outro cliente" in enviados[-1][1].lower()
+
+    vaga = (await client_as_admin.get("/vagas/S2-49")).json()
+    assert vaga["status"] == "reservada"

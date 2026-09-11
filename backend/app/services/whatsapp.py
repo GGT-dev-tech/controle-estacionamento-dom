@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta
 
 import httpx
@@ -8,12 +9,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.cliente import Cliente
-from app.models.ocupante import Ocupante
+from app.models.ocupante import Ocupante, TipoCliente
 from app.models.reserva import Reserva
 from app.models.vaga import StatusVaga, Vaga
 from app.models.veiculo import Veiculo
+from app.schemas.movimentacao import EntradaCreate
 from app.schemas.reserva import ReservaCreate
-from app.services.sync import ConflitoOperacaoError, RecursoNaoEncontradoError, aplicar_cancelamento, aplicar_reserva
+from app.services.sync import (
+    ConflitoOperacaoError,
+    PermissaoNegadaError,
+    RecursoNaoEncontradoError,
+    aplicar_cancelamento,
+    aplicar_entrada,
+    aplicar_reserva,
+)
 from app.services.whatsapp_estado import definir_estado, limpar_estado, obter_estado
 
 logger = logging.getLogger(__name__)
@@ -90,7 +99,7 @@ async def processar_mensagem(telefone: str, mensagem: str, db: AsyncSession) -> 
         if step == "escolhendo_vaga":
             return await _apos_escolher_vaga_numerada(telefone, mensagem, estado, db)
         if step == "escolhendo_veiculo":
-            return await _apos_escolher_veiculo(telefone, mensagem.strip(), estado.get("vaga_id", ""), db)
+            return await _apos_escolher_veiculo(telefone, mensagem.strip(), estado, db)
         if step == "escolhendo_tempo":
             return await _apos_escolher_tempo(telefone, mensagem.strip(), estado, db)
         if step == "confirmando_reserva":
@@ -98,13 +107,42 @@ async def processar_mensagem(telefone: str, mensagem: str, db: AsyncSession) -> 
         await limpar_estado(telefone)  # estado desconhecido/corrompido — não trava o usuário
 
     msg = mensagem.strip().lower()
-    if not msg.startswith("/") and "reservar" in msg:
-        return await _iniciar_fluxo_reserva(telefone, db)
+    if not msg.startswith("/"):
+        if "reservar" in msg:
+            return await _iniciar_fluxo_vaga(telefone, db, "reservar")
+        if "ocupar" in msg:
+            return await _iniciar_fluxo_vaga(telefone, db, "ocupar")
 
     return await processar_comando(telefone, mensagem, db)
 
 
-async def _iniciar_fluxo_reserva(telefone: str, db: AsyncSession) -> str:
+async def _reserva_ativa_do_telefone(telefone: str, db: AsyncSession) -> Reserva | None:
+    telefone_norm = normalizar_telefone(telefone)
+    return (
+        await db.execute(select(Reserva).where(Reserva.telefone == telefone_norm, Reserva.status == "ativa"))
+    ).scalars().first()
+
+
+async def _iniciar_fluxo_vaga(telefone: str, db: AsyncSession, acao: str) -> str:
+    """acao: "reservar" ou "ocupar" — mesma lista numerada de vagas livres nos dois casos,
+    só muda o que acontece depois de escolher (pergunta o tempo, ou ocupa direto).
+
+    Pra "ocupar": se já existe uma reserva ativa em nome do cliente, confirma a chegada
+    nela direto (é a mesma coisa que "confirmar chegada" no app) — nem precisa escolher
+    vaga, já que ele só tem uma reservada.
+    """
+    if acao == "ocupar":
+        reserva_propria = await _reserva_ativa_do_telefone(telefone, db)
+        if reserva_propria:
+            _cliente, veiculos = await _veiculos_do_cliente(telefone, db)
+            placa = reserva_propria.placa or (veiculos[0].placa if len(veiculos) == 1 else None)
+            if placa:
+                return await _ocupar_vaga(reserva_propria.vaga_id, telefone, db, placa_escolhida=placa)
+            return (
+                f"Você tem uma reserva ativa na vaga {reserva_propria.vaga_id}. Envie "
+                f"*/ocupar {reserva_propria.vaga_id}* para confirmar a chegada."
+            )
+
     vagas = (
         await db.execute(
             select(Vaga)
@@ -117,24 +155,26 @@ async def _iniciar_fluxo_reserva(telefone: str, db: AsyncSession) -> str:
         return "😕 Não há vagas livres no momento. Tente novamente mais tarde."
 
     vaga_ids = [vaga.id for vaga in vagas]
-    await definir_estado(telefone, {"step": "escolhendo_vaga", "vagas": vaga_ids})
+    await definir_estado(telefone, {"step": "escolhendo_vaga", "vagas": vaga_ids, "acao": acao})
 
-    linhas = ["🅿️ *Vagas disponíveis* — responda só com o *número* da vaga desejada:", ""]
+    verbo = "reservar" if acao == "reservar" else "ocupar"
+    linhas = [f"🅿️ *Vagas disponíveis* — responda só com o *número* da vaga que quer {verbo}:", ""]
     linhas += [f"{i}. {vaga_id}" for i, vaga_id in enumerate(vaga_ids, start=1)]
     return "\n".join(linhas)
 
 
 async def _apos_escolher_vaga_numerada(telefone: str, texto: str, estado: dict, db: AsyncSession) -> str:
-    """A lista de _iniciar_fluxo_reserva é numerada — aceita o número da opção (o caminho
+    """A lista de _iniciar_fluxo_vaga é numerada — aceita o número da opção (o caminho
     principal, bem mais rápido de digitar que o código da vaga) ou o código da vaga direto
     (pra quem já sabe de cor), sem precisar reiniciar a conversa se digitar do outro jeito.
     """
     texto = texto.strip()
     vagas_listadas: list[str] = estado.get("vagas", [])
+    acao = estado.get("acao", "reservar")
 
     if not vagas_listadas:
         await limpar_estado(telefone)
-        return "❌ Essa lista expirou. Envie *reservar* para ver as vagas disponíveis de novo."
+        return "❌ Essa lista expirou. Envie *reservar* ou *ocupar* para ver as vagas disponíveis de novo."
 
     if texto.isdigit():
         indice = int(texto)
@@ -144,7 +184,7 @@ async def _apos_escolher_vaga_numerada(telefone: str, texto: str, estado: dict, 
     else:
         vaga_id = texto.upper()
 
-    return await _apos_escolher_vaga(telefone, vaga_id, db)
+    return await _apos_escolher_vaga(telefone, vaga_id, db, acao)
 
 
 async def _veiculos_do_cliente(telefone: str, db: AsyncSession) -> tuple[Cliente | None, list[Veiculo]]:
@@ -159,15 +199,17 @@ async def _veiculos_do_cliente(telefone: str, db: AsyncSession) -> tuple[Cliente
     return cliente, list(veiculos)
 
 
-async def _apos_escolher_vaga(telefone: str, vaga_id: str, db: AsyncSession) -> str:
+async def _apos_escolher_vaga(telefone: str, vaga_id: str, db: AsyncSession, acao: str = "reservar") -> str:
     """Depois que o cliente escolheu a vaga: se tiver mais de um veículo cadastrado,
-    pergunta qual antes de confirmar; senão, reserva direto (0 ou 1 veículo).
+    pergunta qual antes de confirmar; senão, segue direto (0 ou 1 veículo) — pra "ocupar"
+    é sempre preciso ter pelo menos um veículo com placa (é o que identifica o carro
+    fisicamente na vaga); "reservar" sem veículo cadastrado ainda funciona (sem placa).
 
     Só confere aqui se a vaga existe — sem isso, uma vaga inexistente só seria percebida
     depois de escolher a duração, um vai-e-vem sem necessidade. Se ela existe mas já não
     está livre, não intercepta: o conflito real (concorrência) só é resolvido com segurança
-    mais à frente, em aplicar_reserva (SELECT FOR UPDATE) — uma leitura sem lock aqui só
-    serviria pra mostrar uma mensagem antecipada, potencialmente já desatualizada.
+    mais à frente, em aplicar_reserva/aplicar_entrada (SELECT FOR UPDATE) — uma leitura sem
+    lock aqui só serviria pra mostrar uma mensagem antecipada, potencialmente já desatualizada.
     """
     vaga = await db.get(Vaga, vaga_id)
     if not vaga or not vaga.ativo:
@@ -176,26 +218,46 @@ async def _apos_escolher_vaga(telefone: str, vaga_id: str, db: AsyncSession) -> 
 
     _cliente, veiculos = await _veiculos_do_cliente(telefone, db)
 
+    if acao == "ocupar" and not veiculos:
+        await limpar_estado(telefone)
+        return "❌ Você ainda não tem um veículo cadastrado — adicione um em Meu Cadastro no app antes de ocupar por aqui."
+
     if len(veiculos) > 1:
-        await definir_estado(telefone, {"step": "escolhendo_veiculo", "vaga_id": vaga_id})
+        await definir_estado(telefone, {"step": "escolhendo_veiculo", "vaga_id": vaga_id, "acao": acao})
         linhas = [f"🚗 Você tem {len(veiculos)} veículos cadastrados — qual vai usar na vaga {vaga_id}?", ""]
         linhas += [f"• {v.placa} — {v.veiculo}" for v in veiculos]
         return "\n".join(linhas)
 
     placa_auto = veiculos[0].placa if len(veiculos) == 1 else None
+    if acao == "ocupar":
+        if not placa_auto:
+            await limpar_estado(telefone)
+            return "❌ Seu veículo não tem placa cadastrada — adicione uma em Meu Cadastro antes de ocupar por aqui."
+        await limpar_estado(telefone)
+        return await _ocupar_vaga(vaga_id, telefone, db, placa_escolhida=placa_auto)
+
     return await _perguntar_tempo(telefone, vaga_id, placa_auto, db)
 
 
-async def _apos_escolher_veiculo(telefone: str, texto: str, vaga_id: str, db: AsyncSession) -> str:
+async def _apos_escolher_veiculo(telefone: str, texto: str, estado: dict, db: AsyncSession) -> str:
+    vaga_id = estado.get("vaga_id", "")
+    acao = estado.get("acao", "reservar")
     if not vaga_id:
         await limpar_estado(telefone)
-        return "❌ Algo deu errado com sua reserva. Envie *reservar* para começar de novo."
+        return "❌ Algo deu errado. Envie *reservar* ou *ocupar* para começar de novo."
 
     _cliente, veiculos = await _veiculos_do_cliente(telefone, db)
     placa_digitada = "".join(c for c in texto.upper() if c.isalnum())
     escolhido = next((v for v in veiculos if v.placa == placa_digitada), None)
     if not escolhido:
         return "❌ Não reconheci essa placa entre seus veículos cadastrados. Envie a placa exatamente como está cadastrada."
+
+    if acao == "ocupar":
+        if not escolhido.placa:
+            await limpar_estado(telefone)
+            return "❌ Esse veículo não tem placa cadastrada — adicione uma em Meu Cadastro antes de ocupar por aqui."
+        await limpar_estado(telefone)
+        return await _ocupar_vaga(vaga_id, telefone, db, placa_escolhida=escolhido.placa)
 
     return await _perguntar_tempo(telefone, vaga_id, escolhido.placa, db)
 
@@ -218,11 +280,9 @@ async def _apos_escolher_tempo(telefone: str, texto: str, estado: dict, db: Asyn
         await limpar_estado(telefone)
         return "❌ Algo deu errado com sua reserva. Envie *reservar* para começar de novo."
 
-    from datetime import timedelta
     txt = texto.lower().strip()
-    import re
     duracao = None
-    
+
     # Strict matching for options 1, 2, 3, 4 to avoid conflict with "1 hora" or "2 horas"
     if txt == "1" or re.fullmatch(r"15\s*m(?:in(?:uto(?:s)?)?)?", txt):
         duracao = timedelta(minutes=15)
@@ -267,8 +327,12 @@ async def processar_comando(telefone: str, mensagem: str, db: AsyncSession) -> s
         return await _listar_vagas(andar, db)
     if comando in ("/reservar", "/r"):
         if argumento:
-            return await _apos_escolher_vaga(telefone, argumento.upper(), db)
-        return await _iniciar_fluxo_reserva(telefone, db)
+            return await _apos_escolher_vaga(telefone, argumento.upper(), db, "reservar")
+        return await _iniciar_fluxo_vaga(telefone, db, "reservar")
+    if comando in ("/ocupar", "/o"):
+        if argumento:
+            return await _apos_escolher_vaga(telefone, argumento.upper(), db, "ocupar")
+        return await _iniciar_fluxo_vaga(telefone, db, "ocupar")
     if comando in ("/cancelar", "/c") and argumento:
         return await _cancelar_reserva(argumento.upper(), telefone, db)
     if comando in ("/status", "/s") and argumento:
@@ -296,7 +360,6 @@ async def _listar_vagas(andar: str | None, db: AsyncSession) -> str:
     return "\n".join(linhas)
 
 
-from datetime import timedelta
 async def _reservar_vaga(
     vaga_id: str, telefone: str, db: AsyncSession, placa_escolhida: str | None = None, duracao: timedelta | None = None
 ) -> str:
@@ -306,7 +369,11 @@ async def _reservar_vaga(
     payload = ReservaCreate(
         vaga_id=vaga_id,
         nome=nome,
-        telefone=telefone,
+        # Normalizado (sem código do país) — mesmo formato que uma reserva feita pelo app
+        # grava (Cliente.telefone). Sem isso, Reserva.telefone ficava no formato bruto do
+        # webhook só pras reservas feitas pelo bot, e qualquer busca por telefone (ex.:
+        # achar a reserva ativa do cliente pra "/ocupar" sem argumento) não encontrava.
+        telefone=normalizar_telefone(telefone),
         email=email,
         placa=placa_escolhida or placa_auto,
         inicio=inicio,
@@ -320,6 +387,35 @@ async def _reservar_vaga(
     except ConflitoOperacaoError:
         return "Desculpe, essa vaga acabou de ser reservada por outra pessoa. Por favor, escolha outra."
     return f"✅ Vaga {vaga_id} reservada até {fim:%H:%M}. Envie */cancelar {vaga_id}* para desistir."
+
+
+async def _ocupar_vaga(vaga_id: str, telefone: str, db: AsyncSession, placa_escolhida: str) -> str:
+    """Ocupa direto (sem passar por reserva) — usada tanto por "ocupar uma vaga livre"
+    quanto por "confirmar chegada" numa vaga já reservada em nome do próprio cliente (o
+    placa_escolhida batendo com a reserva já resolve isso do lado de aplicar_entrada, que
+    dá prioridade ao físico e conclui a reserva silenciosamente quando a placa bate)."""
+    cliente, veiculos = await _veiculos_do_cliente(telefone, db)
+    nome = cliente.nome if cliente else f"WhatsApp {telefone}"
+    tipo_cliente = cliente.tipo_cliente if cliente else TipoCliente.visitante
+    veiculo_escolhido = next((v for v in veiculos if v.placa == placa_escolhida), None)
+    nome_veiculo = veiculo_escolhido.veiculo if veiculo_escolhido else "Veículo"
+
+    payload = EntradaCreate(
+        vaga_id=vaga_id,
+        nome=nome,
+        placa=placa_escolhida,
+        veiculo=nome_veiculo,
+        tipo_cliente=tipo_cliente,
+    )
+    try:
+        await aplicar_entrada(db, payload, f"whatsapp:{telefone}")
+    except RecursoNaoEncontradoError:
+        return f"❌ Vaga {vaga_id} não encontrada."
+    except ConflitoOperacaoError as e:
+        return f"❌ {e}"
+    except PermissaoNegadaError as e:
+        return f"❌ {e}"
+    return f"✅ Vaga {vaga_id} ocupada. Envie */ajuda* para ver os outros comandos."
 
 
 _RESPOSTAS_AFIRMATIVAS = {"sim", "s", "confirmo", "confirmar", "yes"}
@@ -354,7 +450,9 @@ async def _cancelar_reserva(vaga_id: str, telefone: str, db: AsyncSession) -> st
     reserva = (
         await db.execute(
             select(Reserva).where(
-                Reserva.vaga_id == vaga_id, Reserva.status == "ativa", Reserva.telefone == telefone
+                Reserva.vaga_id == vaga_id,
+                Reserva.status == "ativa",
+                Reserva.telefone == normalizar_telefone(telefone),
             )
         )
     ).scalar_one_or_none()
@@ -362,7 +460,7 @@ async def _cancelar_reserva(vaga_id: str, telefone: str, db: AsyncSession) -> st
         return f"❌ Nenhuma reserva ativa sua encontrada para a vaga {vaga_id}."
     try:
         await aplicar_cancelamento(db, reserva.id, f"whatsapp:{telefone}")
-    except (RecursoNaoEncontradoError, ConflitoOperacaoError) as e:
+    except (RecursoNaoEncontradoError, ConflitoOperacaoError, PermissaoNegadaError) as e:
         return f"❌ {e}"
     return f"✅ Reserva da vaga {vaga_id} cancelada."
 
@@ -382,6 +480,9 @@ def _ajuda() -> str:
         "*/vagas G2* — Vagas da Garagem 2\n"
         "*/reservar* (ou */r*) — lista as vagas livres numeradas, responda só com o número\n"
         "*/reservar S2-49* — Reservar direto pelo código (escolhe o tempo em seguida)\n"
+        "*/ocupar* (ou */o*) — ocupa uma vaga livre agora, ou confirma a chegada se você já "
+        "tem uma reserva ativa\n"
+        "*/ocupar S2-49* — Ocupar direto pelo código\n"
         "*/cancelar S2-49* (ou */c S2-49*) — Cancelar sua reserva\n"
         "*/status ABC1234* (ou */s ABC1234*) — Verificar placa\n\n"
         "_Dom Pagamentos • Estacionamento_"

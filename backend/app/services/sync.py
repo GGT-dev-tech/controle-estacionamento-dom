@@ -45,7 +45,20 @@ async def _cliente_do_operador(db: AsyncSession, operador_sub: str) -> Cliente |
     """None quando quem chama não tem cadastro de cliente próprio — é como diferenciamos
     staff/operador (EntradaModal, Admin — mantém a prioridade de corrigir o que observou
     fisicamente em qualquer vaga) de um cliente self-service (só pode agir sobre o que é
-    seu — impede um cliente "tomar" pelo app a vaga/reserva/ocupação de outro cliente)."""
+    seu — impede um cliente "tomar" a vaga/reserva/ocupação de outro cliente, seja pelo
+    app ou pelo bot do WhatsApp).
+
+    O bot passa um sub sintético "whatsapp:<telefone>" (não tem Auth0) — sem tratar esse
+    caso à parte, ele nunca bateria com Cliente.auth0_sub e todo mundo que usa o bot seria
+    tratado como staff sem restrição nenhuma, furando a mesma proteção que existe pro app.
+    """
+    if operador_sub.startswith("whatsapp:"):
+        # Import local: whatsapp.py -> sync.py fecharia um ciclo se importado no topo.
+        from app.services.whatsapp import normalizar_telefone
+
+        telefone = normalizar_telefone(operador_sub.removeprefix("whatsapp:"))
+        return (await db.execute(select(Cliente).where(Cliente.telefone == telefone))).scalar_one_or_none()
+
     return (await db.execute(select(Cliente).where(Cliente.auth0_sub == operador_sub))).scalar_one_or_none()
 
 
