@@ -105,6 +105,14 @@ async def processar_mensagem(telefone: str, mensagem: str, db: AsyncSession) -> 
     """
     estado = await obter_estado(telefone)
     if estado:
+        # Um comando "/" a qualquer momento sai do fluxo atual e começa do zero — sem
+        # isso, um erro no meio de uma conversa (ex.: número fora do intervalo) deixava o
+        # cliente sem saída: tudo que ele mandasse dali pra frente era interpretado como
+        # parte do fluxo antigo (inclusive "/ajuda"), nunca como um comando de verdade.
+        if mensagem.strip().startswith("/"):
+            await limpar_estado(telefone)
+            return await processar_comando(telefone, mensagem, db)
+
         step = estado.get("step")
         if step == "escolhendo_vaga":
             return await _apos_escolher_vaga_numerada(telefone, mensagem, estado, db)
@@ -189,7 +197,10 @@ async def _apos_escolher_vaga_numerada(telefone: str, texto: str, estado: dict, 
     if texto.isdigit():
         indice = int(texto)
         if not (1 <= indice <= len(vagas_listadas)):
-            return f"❌ Número inválido. Escolha um número de 1 a {len(vagas_listadas)} da lista."
+            return (
+                f"❌ Número inválido. Escolha um número de 1 a {len(vagas_listadas)} da lista "
+                "(ou envie */ajuda* para recomeçar)."
+            )
         vaga_id = vagas_listadas[indice - 1]
     else:
         vaga_id = texto.upper()
@@ -260,7 +271,10 @@ async def _apos_escolher_veiculo(telefone: str, texto: str, estado: dict, db: As
     placa_digitada = "".join(c for c in texto.upper() if c.isalnum())
     escolhido = next((v for v in veiculos if v.placa == placa_digitada), None)
     if not escolhido:
-        return "❌ Não reconheci essa placa entre seus veículos cadastrados. Envie a placa exatamente como está cadastrada."
+        return (
+            "❌ Não reconheci essa placa entre seus veículos cadastrados. Envie a placa "
+            "exatamente como está cadastrada (ou */ajuda* para recomeçar)."
+        )
 
     if acao == "ocupar":
         if not escolhido.placa:
@@ -303,7 +317,10 @@ async def _apos_escolher_tempo(telefone: str, texto: str, estado: dict, db: Asyn
     elif txt == "4" or re.fullmatch(r"2\s*h(?:ora(?:s)?)?", txt):
         duracao = timedelta(hours=2)
     else:
-        return "❌ Opção inválida. Responda com 1, 2, 3 ou 4 correspondente ao tempo desejado."
+        return (
+            "❌ Opção inválida. Responda com 1, 2, 3 ou 4 correspondente ao tempo desejado "
+            "(ou */ajuda* para recomeçar)."
+        )
 
     await limpar_estado(telefone)
     return await _reservar_vaga(vaga_id, telefone, db, placa_escolhida=placa, duracao=duracao)

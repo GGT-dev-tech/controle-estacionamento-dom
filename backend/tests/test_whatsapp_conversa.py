@@ -647,3 +647,101 @@ async def test_cliente_nao_ocupa_reserva_de_outro_cliente_via_whatsapp(client_as
 
     vaga = (await client_as_admin.get("/vagas/S2-49")).json()
     assert vaga["status"] == "reservada"
+
+
+async def test_comando_barra_sai_do_fluxo_de_escolha_de_vaga_e_atende_o_comando(
+    client_as_admin, db_session, monkeypatch
+):
+    """Antes: com um número fora do intervalo, qualquer coisa que o cliente mandasse
+    depois (inclusive "/ajuda") era interpretada como parte do fluxo antigo — ele ficava
+    sem saída, precisando esperar o estado expirar (5 min) pra conseguir fazer qualquer
+    outra coisa. Agora um comando "/" a qualquer momento sai do fluxo e atende de verdade."""
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
+    resp_errado = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "99")
+    )
+    assert "número inválido" in enviados[-1][1].lower()
+    assert "/ajuda" in enviados[-1][1]
+
+    resp_ajuda = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "/ajuda")
+    )
+    assert resp_ajuda.status_code == 200
+    assert "Comandos" in enviados[-1][1]
+
+    from app.services.whatsapp_estado import obter_estado
+
+    assert await obter_estado("5511999998888") is None
+
+
+async def test_comando_barra_sai_do_fluxo_de_escolha_de_tempo(client_as_admin, db_session, monkeypatch):
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session)
+    await _criar_vaga(db_session, "S2-49")
+    await _criar_vaga(db_session, "S2-50")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "1"))
+    assert "por quanto tempo" in enviados[-1][1].lower()
+
+    # Em vez de responder 1-4, manda outro comando — deve trocar de fluxo, não travar.
+    resp = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "/vagas")
+    )
+    assert resp.status_code == 200
+    assert "S2-49" in enviados[-1][1] and "S2-50" in enviados[-1][1]
+
+    vaga = (await client_as_admin.get("/vagas/S2-49")).json()
+    assert vaga["status"] == "livre"  # nunca chegou a reservar, o fluxo foi abandonado
+
+
+async def test_comando_barra_sai_do_fluxo_de_confirmar_extensao_de_reserva(
+    client_as_admin, db_session, monkeypatch
+):
+    from app.routers import webhook_whatsapp
+    from app.services.whatsapp_estado import definir_estado
+
+    await _criar_cliente(db_session)
+    await _criar_vaga(db_session, "S2-49")
+    reserva_id = await _criar_reserva_prestes_a_vencer(db_session)
+    await definir_estado("5511999998888", {"step": "confirmando_reserva", "reserva_id": reserva_id})
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    resp = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "/ajuda")
+    )
+    assert resp.status_code == 200
+    assert "Comandos" in enviados[-1][1]
+
+    # a reserva não foi mexida (nem estendida, nem afetada) — só saiu do fluxo de pergunta
+    reservas = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-49"})).json()
+    assert reservas[0]["status"] == "ativa"
