@@ -38,7 +38,17 @@ async def receber_mensagem(secret: str, request: Request, db: AsyncSession = Dep
     if payload.get("event") != "messages.upsert":
         return {"status": "ignored"}
 
-    for msg in payload.get("data", {}).get("messages", []):
+    # A Evolution API v2 manda `data` como o objeto da MENSAGEM em si (com "key"/"message"
+    # direto), não como {"messages": [...]}; algumas configurações antigas/lote ainda usam
+    # essa segunda forma — cobre as duas. Sem isso, o loop nunca roda: toda mensagem recebida
+    # (inclusive comandos como /ajuda) era silenciosamente ignorada, mesmo com o webhook
+    # corretamente configurado e chegando até aqui.
+    data = payload.get("data") or {}
+    mensagens = data.get("messages")
+    if mensagens is None:
+        mensagens = [data] if data.get("key") else []
+
+    for msg in mensagens:
         if msg.get("key", {}).get("fromMe"):
             continue
 

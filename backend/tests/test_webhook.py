@@ -18,15 +18,13 @@ def _segredo_webhook(monkeypatch):
 
 
 def _payload(texto: str, from_me: bool = False) -> dict:
+    """Formato real da Evolution API v2 (confirmado em produção): `data` É o objeto da
+    mensagem (com "key"/"message" direto), não {"messages": [...]}."""
     return {
         "event": "messages.upsert",
         "data": {
-            "messages": [
-                {
-                    "key": {"remoteJid": "11999998888@s.whatsapp.net", "fromMe": from_me},
-                    "message": {"conversation": texto},
-                }
-            ]
+            "key": {"remoteJid": "11999998888@s.whatsapp.net", "fromMe": from_me},
+            "message": {"conversation": texto},
         },
     }
 
@@ -76,12 +74,8 @@ async def test_webhook_processa_resposta_extendedtextmessage(client_as_admin, db
     payload = {
         "event": "messages.upsert",
         "data": {
-            "messages": [
-                {
-                    "key": {"remoteJid": "11999998888@s.whatsapp.net", "fromMe": False},
-                    "message": {"extendedTextMessage": {"text": "/ajuda"}},
-                }
-            ]
+            "key": {"remoteJid": "11999998888@s.whatsapp.net", "fromMe": False},
+            "message": {"extendedTextMessage": {"text": "/ajuda"}},
         },
     }
 
@@ -112,6 +106,45 @@ async def test_webhook_processa_comando_e_responde(client_as_admin, db_session, 
     assert resp.status_code == 200
     assert len(enviados) == 1
     assert enviados[0][0] == "11999998888"
+    assert "Comandos" in enviados[0][1]
+
+
+async def test_webhook_aceita_tambem_o_formato_antigo_data_messages_lista(
+    client_as_admin, db_session, monkeypatch
+):
+    """Algumas configurações (lote/webhookByEvents) ainda mandam data.messages como lista —
+    mantém compatibilidade com esse formato além do real (data = mensagem direto)."""
+    from app.models.cliente import Cliente
+    from app.models.ocupante import TipoCliente
+    from app.routers import webhook_whatsapp
+
+    async with db_session() as db:
+        db.add(Cliente(nome="Cliente Teste", telefone="11999998888", tipo_cliente=TipoCliente.rotativo))
+        await db.commit()
+
+    enviados = []
+
+    async def _fake_enviar_mensagem(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar_mensagem)
+
+    payload = {
+        "event": "messages.upsert",
+        "data": {
+            "messages": [
+                {
+                    "key": {"remoteJid": "11999998888@s.whatsapp.net", "fromMe": False},
+                    "message": {"conversation": "/ajuda"},
+                }
+            ]
+        },
+    }
+
+    resp = await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=payload)
+    assert resp.status_code == 200
+    assert len(enviados) == 1
     assert "Comandos" in enviados[0][1]
 
 
