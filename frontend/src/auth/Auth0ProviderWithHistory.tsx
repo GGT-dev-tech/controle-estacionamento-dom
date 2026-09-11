@@ -22,7 +22,7 @@ export function Auth0ProviderWithHistory({ children }: { children: ReactNode }) 
         audience,
       }}
       onRedirectCallback={onRedirectCallback}
-      cacheLocation="memory"
+      cacheLocation="localstorage"
       useRefreshTokens
     >
       {children}
