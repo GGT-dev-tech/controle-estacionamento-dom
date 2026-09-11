@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 import pytest
 
 
@@ -65,3 +67,37 @@ async def test_fluxo_entrada_e_saida(client_as_admin):
 async def test_operador_nao_pode_criar_vaga(client_as_operador):
     resp = await client_as_operador.post("/vagas", json={"id": "S2-50", "numero": "50", "andar": "S2"})
     assert resp.status_code == 403
+
+
+async def test_sync_reserva_com_datetime_timezone_aware_como_o_frontend_manda(client_as_admin):
+    # Reproduz o segundo ponto do bug de produção: o mesmo payload aware (Z-suffixed)
+    # vindo da fila offline (Dexie) via /movimentacoes/sync, não só do POST /reservas direto.
+    await _criar_vaga(client_as_admin, "S2-51")
+
+    inicio = datetime.utcnow() + timedelta(hours=1)
+    fim = inicio + timedelta(hours=2)
+
+    resp = await client_as_admin.post(
+        "/movimentacoes/sync",
+        json={
+            "operacoes": [
+                {
+                    "id": 1,
+                    "tipo": "reserva",
+                    "payload": {
+                        "vaga_id": "S2-51",
+                        "nome": "Cliente Offline",
+                        "telefone": "11999996666",
+                        "inicio": inicio.isoformat() + "Z",
+                        "fim": fim.isoformat() + "Z",
+                    },
+                }
+            ]
+        },
+    )
+    assert resp.status_code == 200
+    resultado = resp.json()["resultados"][0]
+    assert resultado["sucesso"] is True
+
+    vaga = (await client_as_admin.get("/vagas/S2-51")).json()
+    assert vaga["status"] == "reservada"

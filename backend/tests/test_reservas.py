@@ -55,6 +55,34 @@ async def test_fluxo_reserva_e_cancelamento(client_as_admin):
     assert vaga_livre["status"] == "livre"
 
 
+async def test_reserva_com_datetime_timezone_aware_como_o_frontend_manda(client_as_admin):
+    # O frontend usa Date.prototype.toISOString(), que sempre inclui o sufixo "Z"
+    # (timezone-aware). Reproduz o bug de produção (DataError: can't subtract
+    # offset-naive and offset-aware datetimes) antes da normalização em
+    # schemas/reserva.py.
+    await _criar_vaga(client_as_admin, "G2-13")
+
+    inicio = datetime.utcnow() + timedelta(hours=1)
+    fim = inicio + timedelta(hours=2)
+    inicio_iso = inicio.isoformat() + "Z"
+    fim_iso = fim.isoformat() + "Z"
+
+    resp = await client_as_admin.post(
+        "/reservas",
+        json={
+            "vaga_id": "G2-13",
+            "nome": "Cliente Aware",
+            "telefone": "11999997777",
+            "inicio": inicio_iso,
+            "fim": fim_iso,
+        },
+    )
+    assert resp.status_code == 201
+
+    vaga = (await client_as_admin.get("/vagas/G2-13")).json()
+    assert vaga["status"] == "reservada"
+
+
 async def test_reserva_com_fim_antes_do_inicio_e_invalida(client_as_admin):
     await _criar_vaga(client_as_admin, "G2-11")
     inicio = datetime.utcnow() + timedelta(hours=2)
