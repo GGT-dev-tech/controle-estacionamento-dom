@@ -8,9 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.ocupante import Ocupante
 from app.models.reserva import Reserva
-from app.models.vaga import Vaga
+from app.models.vaga import StatusVaga, Vaga
 from app.schemas.reserva import ReservaCreate
 from app.services.sync import ConflitoOperacaoError, RecursoNaoEncontradoError, aplicar_cancelamento, aplicar_reserva
+from app.services.whatsapp_estado import definir_estado, limpar_estado, obter_estado
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,41 @@ async def enviar_mensagem(telefone: str, texto: str) -> bool:
         except Exception:
             logger.exception("Falha ao enviar mensagem WhatsApp")
             return False
+
+
+async def processar_mensagem(telefone: str, mensagem: str, db: AsyncSession) -> str:
+    """Entrypoint único do bot: primeiro checa se há uma conversa em andamento (Redis);
+    senão, tenta iniciar o fluxo de reserva por texto livre; senão, cai nos /comandos de hoje.
+    """
+    estado = await obter_estado(telefone)
+    if estado and estado.get("step") == "escolhendo_vaga":
+        await limpar_estado(telefone)
+        return await _reservar_vaga(mensagem.strip().upper(), telefone, db)
+
+    msg = mensagem.strip().lower()
+    if not msg.startswith("/") and "reservar" in msg:
+        return await _iniciar_fluxo_reserva(telefone, db)
+
+    return await processar_comando(telefone, mensagem, db)
+
+
+async def _iniciar_fluxo_reserva(telefone: str, db: AsyncSession) -> str:
+    vagas = (
+        await db.execute(
+            select(Vaga)
+            .where(Vaga.ativo.is_(True), Vaga.status == StatusVaga.livre)
+            .order_by(Vaga.andar, Vaga.numero)
+        )
+    ).scalars().all()
+
+    if not vagas:
+        return "😕 Não há vagas livres no momento. Tente novamente mais tarde."
+
+    await definir_estado(telefone, {"step": "escolhendo_vaga"})
+
+    linhas = ["🅿️ *Vagas disponíveis* — responda com o código da vaga que deseja reservar:", ""]
+    linhas += [f"🟢 {vaga.id}" for vaga in vagas]
+    return "\n".join(linhas)
 
 
 async def processar_comando(telefone: str, mensagem: str, db: AsyncSession) -> str:
@@ -131,6 +167,7 @@ def _ajuda() -> str:
         "*/vagas S2* — Vagas do Subsolo 2\n"
         "*/vagas G2* — Vagas da Garagem 2\n"
         "*/reservar S2-49* — Reservar vaga por 2h\n"
+        "*reservar* — inicia uma reserva por conversa (escolha a vaga na lista)\n"
         "*/cancelar S2-49* — Cancelar sua reserva\n"
         "*/status ABC1234* — Verificar placa\n\n"
         "_Dom Pagamentos • Estacionamento_"
