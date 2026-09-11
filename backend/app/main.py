@@ -14,6 +14,7 @@ from app.database import get_db
 from app.routers import admin, clientes, movimentacoes, relatorios, reservas, vagas, webhook_whatsapp, ws
 from app.services import redis_cache
 from app.services.scheduler import loop_verificacao_reservas
+from app.services.ws_manager import escutar_atualizacoes_de_vaga
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,9 +24,11 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    tarefa = asyncio.create_task(loop_verificacao_reservas()) if settings.scheduler_habilitado else None
+    tarefas = [asyncio.create_task(escutar_atualizacoes_de_vaga())]
+    if settings.scheduler_habilitado:
+        tarefas.append(asyncio.create_task(loop_verificacao_reservas()))
     yield
-    if tarefa:
+    for tarefa in tarefas:
         tarefa.cancel()
 
 
