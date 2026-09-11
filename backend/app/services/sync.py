@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -221,3 +221,35 @@ async def expirar_reservas_vencidas(db: AsyncSession) -> list[Reserva]:
             await notificar_vaga_atualizada(vaga.id, vaga.status.value)
 
     return list(vencidas)
+
+
+async def lembrar_reservas_proximas_do_vencimento(db: AsyncSession, janela_minutos: int = 10) -> list[Reserva]:
+    """Reservas ativas cujo fim está dentro da janela e ainda não receberam lembrete.
+    Marca lembrete_enviado=True para não repetir — pensado para ser chamado com mais
+    frequência que expirar_reservas_vencidas (ex.: a cada 5 min, via Railway Cron).
+    """
+    agora = datetime.utcnow()
+    limite = agora + timedelta(minutes=janela_minutos)
+
+    proximas = (
+        await db.execute(
+            select(Reserva).where(
+                Reserva.status == "ativa",
+                Reserva.fim > agora,
+                Reserva.fim <= limite,
+                Reserva.lembrete_enviado.is_(False),
+            )
+        )
+    ).scalars().all()
+
+    if not proximas:
+        return []
+
+    for reserva in proximas:
+        reserva.lembrete_enviado = True
+
+    await db.commit()
+    for reserva in proximas:
+        await db.refresh(reserva)
+
+    return list(proximas)

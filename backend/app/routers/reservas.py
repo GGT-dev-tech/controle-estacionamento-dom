@@ -8,13 +8,19 @@ from app.models.reserva import Reserva
 from app.schemas.reserva import ReservaCreate, ReservaRead
 from app.security.audit import registrar_auditoria
 from app.security.auth import get_current_user
-from app.services.notificacoes import notificar_reserva_cancelada, notificar_reserva_criada, notificar_reserva_expirada
+from app.services.notificacoes import (
+    notificar_reserva_cancelada,
+    notificar_reserva_criada,
+    notificar_reserva_expirada,
+    notificar_reserva_proxima_do_vencimento,
+)
 from app.services.sync import (
     ConflitoOperacaoError,
     RecursoNaoEncontradoError,
     aplicar_cancelamento,
     aplicar_reserva,
     expirar_reservas_vencidas,
+    lembrar_reservas_proximas_do_vencimento,
 )
 
 router = APIRouter(prefix="/reservas", tags=["Reservas"])
@@ -96,3 +102,19 @@ async def expirar_vencidas(
     for reserva in expiradas:
         await notificar_reserva_expirada(reserva)
     return {"expiradas": len(expiradas)}
+
+
+@router.post("/lembrar-vencimento")
+async def lembrar_vencimento(
+    db: AsyncSession = Depends(get_db),
+    x_cron_secret: str | None = Header(default=None, alias="X-Cron-Secret"),
+) -> dict:
+    """Disparado por uma tarefa agendada externa (ex.: Railway Cron), com mais frequência
+    que /expirar-vencidas — avisa por WhatsApp quem tem reserva perto do vencimento."""
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=404)
+
+    proximas = await lembrar_reservas_proximas_do_vencimento(db)
+    for reserva in proximas:
+        await notificar_reserva_proxima_do_vencimento(reserva)
+    return {"lembretes_enviados": len(proximas)}

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -20,3 +20,5 @@ class Reserva(Base):
     status: Mapped[str] = mapped_column(String(20), default="ativa")
     canal: Mapped[str] = mapped_column(String(20), default="webapp")
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Evita mandar o mesmo lembrete de vencimento mais de uma vez (ver services/sync.py).
+    lembrete_enviado: Mapped[bool] = mapped_column(Boolean, default=False)

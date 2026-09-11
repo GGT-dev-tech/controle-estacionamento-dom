@@ -69,7 +69,12 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
     >
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-lg font-semibold">{vaga.id}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-lg font-semibold">{vaga.id}</p>
+            <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
+              {vaga.andar}
+            </span>
+          </div>
           {vaga.posicao && <p className="text-xs text-muted-foreground">{vaga.posicao}</p>}
         </div>
         <Badge variant={vaga.status}>{STATUS_LABEL[vaga.status]}</Badge>
