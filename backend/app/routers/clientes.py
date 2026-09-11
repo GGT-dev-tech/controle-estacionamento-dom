@@ -105,12 +105,27 @@ async def atualizar_meu_cadastro(
 ) -> MeuCadastroRead:
     cliente = await _obter_meu_cliente(db, user["sub"])
     dados = payload.model_dump(exclude_unset=True)
+    
+    telefone_antigo = cliente.telefone
+    telefone_novo = None
+    
     if "telefone" in dados and dados["telefone"] is not None:
-        dados["telefone"] = normalizar_telefone(dados["telefone"])
+        telefone_novo = normalizar_telefone(dados["telefone"])
+        dados["telefone"] = telefone_novo
+        
     for campo, valor in dados.items():
         setattr(cliente, campo, valor)
+        
     await db.commit()
     await db.refresh(cliente)
+    
+    if telefone_novo and telefone_novo != telefone_antigo:
+        await enviar_mensagem(
+            telefone_novo,
+            "📱 Seu número foi atualizado no Dom Estacionamento com sucesso! "
+            "Sempre que precisar, envie */ajuda* aqui para ver os comandos do bot de reservas."
+        )
+        
     return await _montar_meu_cadastro(db, cliente)
 
 
