@@ -45,9 +45,14 @@ export function VagaListItem({ vaga }: { vaga: Vaga }) {
 
   const podeExpandir = vaga.status !== 'manutencao'
 
+  // Protege contra um cliente interferir na reserva/ocupação de outro pelo app — o
+  // backend já rejeita (403), isso só evita oferecer uma ação que sabemos que vai falhar.
+  const reservadaPorOutroBloqueado = vaga.status === 'reservada' && !reservaEhMinha && !isAdmin
+  const podeLiberar = isAdmin || (vaga.ocupante && veiculos.some((v) => v.placa === vaga.ocupante!.placa))
+
   function handleToqueNaLinha() {
     if (!podeExpandir) return
-    if (!expandido && acao === 'inicial' && podeAgir && !reservaEhMinha) {
+    if (!expandido && acao === 'inicial' && podeAgir && !reservaEhMinha && !reservadaPorOutroBloqueado) {
       setAcao('escolhendo')
     }
     setExpandido((v) => !v)
@@ -104,21 +109,15 @@ export function VagaListItem({ vaga }: { vaga: Vaga }) {
           {erro && <p className="text-xs text-destructive">{erro}</p>}
 
           {vaga.status === 'ocupada' ? (
-            cadastro ? (
+            podeLiberar ? (
               <Button size="sm" className="w-full" disabled={liberar.isPending} onClick={handleConfirmarLiberar}>
                 {liberar.isPending ? 'Liberando…' : 'Liberar vaga'}
               </Button>
             ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                disabled={liberar.isPending}
-                onClick={() => liberar.mutate(vaga.id)}
-              >
-                {liberar.isPending ? 'Liberando…' : 'Liberar vaga'}
-              </Button>
+              <p className="text-center text-xs text-muted-foreground">Ocupada por outro veículo.</p>
             )
+          ) : reservadaPorOutroBloqueado ? (
+            <p className="text-center text-xs text-muted-foreground">Reservada por outro cliente.</p>
           ) : podeAgir ? (
             <>
               {veiculos.length > 1 && (
@@ -128,7 +127,7 @@ export function VagaListItem({ vaga }: { vaga: Vaga }) {
                 >
                   {veiculos.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.placa} — {v.veiculo}
+                      {v.placa ? `${v.placa} — ${v.veiculo}` : v.veiculo}
                     </option>
                   ))}
                 </Select>

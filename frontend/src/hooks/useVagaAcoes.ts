@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLiberarVaga, useOcuparVaga } from '@/hooks/useVagas'
 import { useCancelarReserva, useCriarReserva } from '@/hooks/useReservas'
 import { useMeuCadastro } from '@/hooks/useCliente'
+import { mensagemDeErro } from '@/lib/utils'
 import type { Vaga } from '@/api/types'
 
 export const PRAZOS_RESERVA = [
@@ -48,6 +49,10 @@ export function useVagaAcoes(vaga: Vaga) {
   async function handleConfirmarOcupar() {
     if (!cadastro || !veiculoAtivo) return
     setErro(null)
+    if (!veiculoAtivo.placa) {
+      setErro('Esse veículo não tem placa cadastrada — adicione uma em Meu Cadastro para poder ocupar a vaga.')
+      return
+    }
     try {
       await ocupar.mutateAsync({
         vaga_id: vaga.id,
@@ -57,7 +62,7 @@ export function useVagaAcoes(vaga: Vaga) {
         tipo_cliente: cadastro.tipo_cliente,
       })
     } catch (err) {
-      setErro('Não foi possível ocupar a vaga. Tente novamente.')
+      setErro(mensagemDeErro(err, 'Não foi possível ocupar a vaga. Tente novamente.'))
       throw err
     } finally {
       resetar()
@@ -69,7 +74,7 @@ export function useVagaAcoes(vaga: Vaga) {
     try {
       await liberar.mutateAsync(vaga.id)
     } catch (err) {
-      setErro('Não foi possível liberar a vaga. Tente novamente.')
+      setErro(mensagemDeErro(err, 'Não foi possível liberar a vaga. Tente novamente.'))
       throw err
     }
   }
@@ -79,8 +84,8 @@ export function useVagaAcoes(vaga: Vaga) {
     setErro(null)
     try {
       await cancelarReserva.mutateAsync({ reservaId: vaga.reserva_ativa.id, vagaId: vaga.id })
-    } catch {
-      setErro('Não foi possível cancelar a reserva. Tente novamente.')
+    } catch (err) {
+      setErro(mensagemDeErro(err, 'Não foi possível cancelar a reserva. Tente novamente.'))
     }
   }
 
@@ -95,12 +100,12 @@ export function useVagaAcoes(vaga: Vaga) {
         nome: cadastro.nome,
         telefone: cadastro.telefone,
         email: cadastro.email ?? undefined,
-        placa: veiculoAtivo.placa,
+        placa: veiculoAtivo.placa ?? undefined,
         inicio: inicio.toISOString(),
         fim: fim.toISOString(),
       })
-    } catch {
-      setErro('Não foi possível reservar a vaga. Tente novamente.')
+    } catch (err) {
+      setErro(mensagemDeErro(err, 'Não foi possível reservar a vaga. Tente novamente.'))
     } finally {
       resetar()
     }

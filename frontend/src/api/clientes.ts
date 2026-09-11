@@ -3,7 +3,7 @@ import type { TipoCliente } from './types'
 
 export interface Veiculo {
   id: number
-  placa: string
+  placa: string | null
   veiculo: string
   criado_em: string
 }
@@ -40,7 +40,7 @@ export async function atualizarMeuCadastro(payload: Partial<MeuCadastroPayload>)
   return data
 }
 
-export async function adicionarVeiculo(payload: { placa: string; veiculo: string }): Promise<Veiculo> {
+export async function adicionarVeiculo(payload: { placa?: string; veiculo: string }): Promise<Veiculo> {
   const { data } = await apiClient.post<Veiculo>('/clientes/me/veiculos', payload)
   return data
 }

@@ -27,8 +27,8 @@ export default function Onboarding({ onPular }: { onPular: () => void }) {
         telefone: String(form.get('telefone')),
         email: String(form.get('email') || '') || undefined,
       })
-      if (placa && veiculo) {
-        await adicionarVeiculo.mutateAsync({ placa, veiculo })
+      if (veiculo) {
+        await adicionarVeiculo.mutateAsync({ placa: placa || undefined, veiculo })
       }
     } catch {
       setErro('Não foi possível concluir o cadastro. Confira os dados e tente novamente.')

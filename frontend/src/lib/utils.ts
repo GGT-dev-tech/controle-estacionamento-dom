@@ -1,9 +1,22 @@
+import axios from 'axios'
 import { type ClassValue, clsx } from 'clsx'
 import type { ChangeEvent } from 'react'
 import { twMerge } from 'tailwind-merge'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
+}
+
+/**
+ * Lê a mensagem de erro real da API (campo `detail`, padrão do FastAPI) em vez de um
+ * palpite fixo — assim o usuário vê exatamente por que falhou (ex.: "placa já
+ * cadastrada" vs. qualquer outro motivo), sem a mesma mensagem genérica pra tudo.
+ */
+export function mensagemDeErro(erro: unknown, fallback: string): string {
+  if (axios.isAxiosError(erro) && typeof erro.response?.data?.detail === 'string') {
+    return erro.response.data.detail
+  }
+  return fallback
 }
 
 /**

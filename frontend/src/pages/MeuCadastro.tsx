@@ -11,7 +11,7 @@ import {
   useRemoverVeiculo,
 } from '@/hooks/useCliente'
 import { useCancelarReserva, useReservas } from '@/hooks/useReservas'
-import { forcarMaiusculas } from '@/lib/utils'
+import { forcarMaiusculas, mensagemDeErro } from '@/lib/utils'
 
 const STATUS_VARIANT: Record<string, 'livre' | 'reservada' | 'neutro'> = {
   ativa: 'reservada',
@@ -81,14 +81,15 @@ function VeiculosSection() {
     event.preventDefault()
     setErro(null)
     const form = new FormData(event.currentTarget)
+    const placa = String(form.get('placa') || '').trim()
     try {
       await adicionar.mutateAsync({
-        placa: String(form.get('placa')),
+        placa: placa || undefined,
         veiculo: String(form.get('veiculo')),
       })
       event.currentTarget.reset()
-    } catch {
-      setErro('Não foi possível adicionar o veículo (placa já cadastrada?).')
+    } catch (err) {
+      setErro(mensagemDeErro(err, 'Não foi possível adicionar o veículo. Tente novamente.'))
     }
   }
 
@@ -98,8 +99,7 @@ function VeiculosSection() {
       <form onSubmit={handleSubmit} className="mb-3 flex flex-wrap gap-2">
         <Input
           name="placa"
-          placeholder="ABC1234"
-          required
+          placeholder="ABC1234 (opcional)"
           className="w-28 uppercase"
           onChange={forcarMaiusculas}
         />
@@ -116,7 +116,9 @@ function VeiculosSection() {
             className="flex items-center justify-between rounded-md bg-secondary px-3 py-1.5 text-sm"
           >
             <span>
-              <span className="font-medium">{v.placa}</span> — {v.veiculo}
+              {v.placa && <span className="font-medium">{v.placa}</span>}
+              {v.placa ? ' — ' : ''}
+              {v.veiculo}
             </span>
             <button
               onClick={() => remover.mutate(v.id)}

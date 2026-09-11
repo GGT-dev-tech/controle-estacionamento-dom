@@ -36,6 +36,11 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
     handleReservarPrazo,
   } = useVagaAcoes(vaga)
 
+  // Protege contra um cliente interferir na reserva/ocupação de outro pelo app — o
+  // backend já rejeita (403), isso só evita oferecer uma ação que sabemos que vai falhar.
+  const reservadaPorOutroBloqueado = vaga.status === 'reservada' && !reservaEhMinha && !isAdmin
+  const podeLiberar = isAdmin || (vaga.ocupante && veiculos.some((v) => v.placa === vaga.ocupante!.placa))
+
   return (
     <div
       className={cn(
@@ -91,13 +96,19 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
 
       <div className="mt-auto space-y-2 pt-1">
         {vaga.status === 'ocupada' ? (
-          <SwipeToConfirm
-            label="Deslize para liberar"
-            confirmingLabel="Liberando…"
-            onConfirm={handleConfirmarLiberar}
-          />
+          podeLiberar ? (
+            <SwipeToConfirm
+              label="Deslize para liberar"
+              confirmingLabel="Liberando…"
+              onConfirm={handleConfirmarLiberar}
+            />
+          ) : (
+            <p className="text-center text-xs text-muted-foreground">Ocupada por outro veículo.</p>
+          )
         ) : vaga.status === 'manutencao' ? (
           <p className="text-center text-xs text-muted-foreground">Indisponível</p>
+        ) : reservadaPorOutroBloqueado ? (
+          <p className="text-center text-xs text-muted-foreground">Reservada por outro cliente.</p>
         ) : podeAgir ? (
           <>
             {veiculos.length > 1 && acao !== 'inicial' && (
@@ -107,7 +118,7 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
               >
                 {veiculos.map((v) => (
                   <option key={v.id} value={v.id}>
-                    {v.placa} — {v.veiculo}
+                    {v.placa ? `${v.placa} — ${v.veiculo}` : v.veiculo}
                   </option>
                 ))}
               </Select>
