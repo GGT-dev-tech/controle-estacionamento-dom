@@ -74,3 +74,15 @@ async def notificar_reserva_expirada(reserva: Reserva) -> None:
         )
     if reserva.email:
         await enviar_cancelamento_reserva(_reserva_para_dict(reserva))
+
+
+async def notificar_entrada_confirmada(telefone: str, vaga_id: str) -> None:
+    """Confirma por WhatsApp que a vaga foi ocupada. Diferente de notificar_reserva_criada,
+    dispara pra qualquer ocupação (swipe, EntradaModal), não só reserva — quem chama
+    (aplicar_entrada) já resolveu o telefone a partir da placa, só notifica se achou."""
+    await enviar_mensagem(telefone, f"✅ Você ocupou a vaga {vaga_id}.")
+
+
+async def notificar_saida_confirmada(telefone: str, vaga_id: str, tempo_permanencia_min: int | None) -> None:
+    tempo = f" (ficou {tempo_permanencia_min} min)" if tempo_permanencia_min is not None else ""
+    await enviar_mensagem(telefone, f"👋 Você liberou a vaga {vaga_id}{tempo}.")

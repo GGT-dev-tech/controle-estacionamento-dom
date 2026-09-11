@@ -64,6 +64,51 @@ async def test_fluxo_entrada_e_saida(client_as_admin):
     assert vaga_livre["ocupante"] is None
 
 
+async def test_entrada_e_saida_confirmam_por_whatsapp_quando_placa_tem_dono_cadastrado(
+    client_as_admin, db_session, monkeypatch
+):
+    from app.models.cliente import Cliente
+    from app.models.ocupante import TipoCliente
+    from app.models.veiculo import Veiculo
+    from app.services import notificacoes
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(notificacoes, "enviar_mensagem", _fake_enviar)
+
+    async with db_session() as session:
+        cliente = Cliente(nome="Cliente Teste", telefone="11999998888", tipo_cliente=TipoCliente.rotativo)
+        session.add(cliente)
+        await session.flush()
+        session.add(Veiculo(cliente_id=cliente.id, placa="ABC1234", veiculo="Fiat Argo"))
+        await session.commit()
+
+    await _criar_vaga(client_as_admin, "S2-60")
+
+    resp_entrada = await client_as_admin.post(
+        "/movimentacoes/entrada",
+        json={
+            "vaga_id": "S2-60",
+            "nome": "Cliente Teste",
+            "placa": "abc1234",
+            "veiculo": "Fiat Argo",
+            "tipo_cliente": "rotativo",
+        },
+    )
+    assert resp_entrada.status_code == 201
+    assert enviados[-1] == ("11999998888", "✅ Você ocupou a vaga S2-60.")
+
+    resp_saida = await client_as_admin.post("/movimentacoes/saida", json={"vaga_id": "S2-60"})
+    assert resp_saida.status_code == 201
+    telefone, texto = enviados[-1]
+    assert telefone == "11999998888"
+    assert "liberou a vaga S2-60" in texto
+
+
 async def test_operador_nao_pode_criar_vaga(client_as_operador):
     resp = await client_as_operador.post("/vagas", json={"id": "S2-50", "numero": "50", "andar": "S2"})
     assert resp.status_code == 403

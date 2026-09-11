@@ -3,10 +3,12 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.cliente import Cliente
 from app.models.movimentacao import Movimentacao
 from app.models.ocupante import Ocupante
 from app.models.reserva import Reserva
 from app.models.vaga import StatusVaga, Vaga
+from app.models.veiculo import Veiculo
 from app.schemas.movimentacao import EntradaCreate
 from app.schemas.reserva import ReservaCreate
 from app.security.audit import registrar_auditoria
@@ -16,6 +18,17 @@ from app.services.ws_manager import notificar_vaga_atualizada
 
 class RecursoNaoEncontradoError(Exception):
     """A vaga/reserva referenciada pela operação não existe (ou está inativa)."""
+
+
+async def _telefone_por_placa(db: AsyncSession, placa: str) -> str | None:
+    """Acha o telefone do dono cadastrado de um veículo pela placa — usado pra confirmar
+    ocupação/liberação por WhatsApp sem exigir um campo de telefone na entrada/saída
+    (que não tem isso hoje). Sem veículo cadastrado com essa placa, não há pra quem avisar."""
+    veiculo = (await db.execute(select(Veiculo).where(Veiculo.placa == placa))).scalar_one_or_none()
+    if not veiculo:
+        return None
+    cliente = await db.get(Cliente, veiculo.cliente_id)
+    return cliente.telefone if cliente else None
 
 
 class ConflitoOperacaoError(Exception):
@@ -82,11 +95,15 @@ async def aplicar_entrada(db: AsyncSession, payload: EntradaCreate, operador_sub
     await invalidate_vagas_cache()
     await notificar_vaga_atualizada(vaga.id, vaga.status.value)
 
-    for reserva in reservas_sobrepostas:
-        # Import local: notificacoes.py -> whatsapp.py -> sync.py fecharia um ciclo se
-        # importado no topo do módulo.
-        from app.services.notificacoes import notificar_reserva_sobreposta
+    # Import local: notificacoes.py -> whatsapp.py -> sync.py fecharia um ciclo se
+    # importado no topo do módulo.
+    from app.services.notificacoes import notificar_entrada_confirmada, notificar_reserva_sobreposta
 
+    telefone = await _telefone_por_placa(db, payload.placa.upper())
+    if telefone:
+        await notificar_entrada_confirmada(telefone, vaga.id)
+
+    for reserva in reservas_sobrepostas:
         await notificar_reserva_sobreposta(reserva)
         await registrar_auditoria(db, operador_sub, "reserva_sobreposta_fisicamente", "reserva", str(reserva.id))
 
@@ -128,6 +145,13 @@ async def aplicar_saida(db: AsyncSession, vaga_id: str, operador_sub: str) -> Mo
     await db.refresh(movimentacao)
     await invalidate_vagas_cache()
     await notificar_vaga_atualizada(vaga.id, vaga.status.value)
+
+    from app.services.notificacoes import notificar_saida_confirmada
+
+    telefone = await _telefone_por_placa(db, movimentacao.placa)
+    if telefone:
+        await notificar_saida_confirmada(telefone, vaga.id, tempo_permanencia_min)
+
     return movimentacao
 
 
