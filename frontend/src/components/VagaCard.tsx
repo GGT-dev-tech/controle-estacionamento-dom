@@ -5,7 +5,7 @@ import { Select } from '@/components/ui/select'
 import { EntradaModal } from '@/components/EntradaModal'
 import { SwipeToConfirm } from '@/components/SwipeToConfirm'
 import { useLiberarVaga, useOcuparVaga } from '@/hooks/useVagas'
-import { useCriarReserva } from '@/hooks/useReservas'
+import { useCancelarReserva, useCriarReserva } from '@/hooks/useReservas'
 import { useMeuCadastro } from '@/hooks/useCliente'
 import type { Vaga } from '@/api/types'
 import { cn } from '@/lib/utils'
@@ -34,6 +34,7 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
   const ocupar = useOcuparVaga()
   const liberar = useLiberarVaga()
   const criarReserva = useCriarReserva()
+  const cancelarReserva = useCancelarReserva()
 
   const veiculos = cadastro?.veiculos ?? []
   const veiculoAtivo = veiculos.find((v) => v.id === veiculoEscolhidoId) ?? veiculos[0]
@@ -80,6 +81,16 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
     } catch (err) {
       setErro('Não foi possível liberar a vaga. Tente novamente.')
       throw err
+    }
+  }
+
+  async function handleCancelarReserva() {
+    if (!vaga.reserva_ativa) return
+    setErro(null)
+    try {
+      await cancelarReserva.mutateAsync({ reservaId: vaga.reserva_ativa.id, vagaId: vaga.id })
+    } catch {
+      setErro('Não foi possível cancelar a reserva. Tente novamente.')
     }
   }
 
@@ -184,11 +195,21 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
             )}
 
             {acao === 'inicial' && reservaEhMinha && (
-              <SwipeToConfirm
-                label="Deslize para confirmar chegada"
-                confirmingLabel="Confirmando…"
-                onConfirm={handleConfirmarOcupar}
-              />
+              <>
+                <SwipeToConfirm
+                  label="Deslize para confirmar chegada"
+                  confirmingLabel="Confirmando…"
+                  onConfirm={handleConfirmarOcupar}
+                />
+                <button
+                  type="button"
+                  onClick={handleCancelarReserva}
+                  disabled={cancelarReserva.isPending}
+                  className="w-full text-center text-xs text-muted-foreground hover:text-destructive"
+                >
+                  {cancelarReserva.isPending ? 'Cancelando…' : 'Cancelar reserva'}
+                </button>
+              </>
             )}
             {acao === 'inicial' && !reservaEhMinha && (
               <SwipeToConfirm label="Deslize para continuar" onConfirm={() => setAcao('escolhendo')} />
