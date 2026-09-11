@@ -4,131 +4,33 @@ import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { EntradaModal } from '@/components/EntradaModal'
 import { SwipeToConfirm } from '@/components/SwipeToConfirm'
-import { useLiberarVaga, useOcuparVaga } from '@/hooks/useVagas'
-import { useCancelarReserva, useCriarReserva } from '@/hooks/useReservas'
-import { useMeuCadastro } from '@/hooks/useCliente'
+import { PRAZOS_RESERVA, useVagaAcoes } from '@/hooks/useVagaAcoes'
+import { STATUS_DOT, STATUS_LABEL, STATUS_RING } from '@/lib/vagaStatus'
 import type { Vaga } from '@/api/types'
 import { cn } from '@/lib/utils'
 
-const STATUS_LABEL: Record<Vaga['status'], string> = {
-  livre: 'Livre',
-  ocupada: 'Ocupada',
-  reservada: 'Reservada',
-  manutencao: 'Manutenção',
-}
-
-const STATUS_RING: Record<Vaga['status'], string> = {
-  livre: 'ring-1 ring-vaga-livre/30',
-  ocupada: 'ring-1 ring-vaga-ocupada/30',
-  reservada: 'ring-1 ring-vaga-reservada/30',
-  manutencao: '',
-}
-
-const STATUS_DOT: Record<Vaga['status'], string> = {
-  livre: 'bg-vaga-livre shadow-glow-livre',
-  ocupada: 'bg-vaga-ocupada shadow-glow-ocupada',
-  reservada: 'bg-vaga-reservada shadow-glow-reservada',
-  manutencao: 'bg-vaga-manutencao',
-}
-
-const PRAZOS_RESERVA = [
-  { minutos: 15, label: '15 min' },
-  { minutos: 30, label: '30 min' },
-  { minutos: 60, label: '1h' },
-]
-
-type Acao = 'inicial' | 'escolhendo' | 'prazo'
-
 export function VagaCard({ vaga }: { vaga: Vaga }) {
   const [modalAberto, setModalAberto] = useState(false)
-  const [erro, setErro] = useState<string | null>(null)
-  const [acao, setAcao] = useState<Acao>('inicial')
-  const [veiculoEscolhidoId, setVeiculoEscolhidoId] = useState<number | null>(null)
-  const { data: cadastro } = useMeuCadastro()
-  const ocupar = useOcuparVaga()
-  const liberar = useLiberarVaga()
-  const criarReserva = useCriarReserva()
-  const cancelarReserva = useCancelarReserva()
-
-  const veiculos = cadastro?.veiculos ?? []
-  const veiculoAtivo = veiculos.find((v) => v.id === veiculoEscolhidoId) ?? veiculos[0]
-
-  // A reserva é minha? Só assim faz sentido oferecer "confirmar chegada" direto —
-  // reserva de outra pessoa continua só como informação (ocupar fisicamente ainda é
-  // possível, mas passa pela escolha normal, não por um atalho "é sua vaga").
-  const reservaEhMinha = !!(vaga.reserva_ativa && cadastro && vaga.reserva_ativa.telefone === cadastro.telefone)
-
-  // Swipe só faz sentido pra quem já tem cadastro + veículo — sem isso não dá pra
-  // preencher nome/placa sozinho, e o formulário completo continua sendo o caminho
-  // (ex.: registrando a entrada de um visitante sem conta).
-  const podeUsarSwipe =
-    (vaga.status === 'livre' || vaga.status === 'reservada') && !!cadastro && veiculos.length > 0
-
-  function resetar() {
-    setAcao('inicial')
-    setVeiculoEscolhidoId(null)
-  }
-
-  async function handleConfirmarOcupar() {
-    if (!cadastro || !veiculoAtivo) return
-    setErro(null)
-    try {
-      await ocupar.mutateAsync({
-        vaga_id: vaga.id,
-        nome: cadastro.nome,
-        placa: veiculoAtivo.placa,
-        veiculo: veiculoAtivo.veiculo,
-        tipo_cliente: cadastro.tipo_cliente,
-      })
-    } catch (err) {
-      setErro('Não foi possível ocupar a vaga. Tente novamente.')
-      throw err
-    } finally {
-      resetar()
-    }
-  }
-
-  async function handleConfirmarLiberar() {
-    setErro(null)
-    try {
-      await liberar.mutateAsync(vaga.id)
-    } catch (err) {
-      setErro('Não foi possível liberar a vaga. Tente novamente.')
-      throw err
-    }
-  }
-
-  async function handleCancelarReserva() {
-    if (!vaga.reserva_ativa) return
-    setErro(null)
-    try {
-      await cancelarReserva.mutateAsync({ reservaId: vaga.reserva_ativa.id, vagaId: vaga.id })
-    } catch {
-      setErro('Não foi possível cancelar a reserva. Tente novamente.')
-    }
-  }
-
-  async function handleReservarPrazo(minutos: number) {
-    if (!cadastro || !veiculoAtivo) return
-    setErro(null)
-    const inicio = new Date()
-    const fim = new Date(inicio.getTime() + minutos * 60_000)
-    try {
-      await criarReserva.mutateAsync({
-        vaga_id: vaga.id,
-        nome: cadastro.nome,
-        telefone: cadastro.telefone,
-        email: cadastro.email ?? undefined,
-        placa: veiculoAtivo.placa,
-        inicio: inicio.toISOString(),
-        fim: fim.toISOString(),
-      })
-    } catch {
-      setErro('Não foi possível reservar a vaga. Tente novamente.')
-    } finally {
-      resetar()
-    }
-  }
+  const {
+    erro,
+    acao,
+    setAcao,
+    setVeiculoEscolhidoId,
+    cadastro,
+    veiculos,
+    veiculoAtivo,
+    reservaEhMinha,
+    podeAgir,
+    ocupar,
+    liberar,
+    criarReserva,
+    cancelarReserva,
+    resetar,
+    handleConfirmarOcupar,
+    handleConfirmarLiberar,
+    handleCancelarReserva,
+    handleReservarPrazo,
+  } = useVagaAcoes(vaga)
 
   return (
     <div
@@ -204,7 +106,7 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
           )
         ) : vaga.status === 'manutencao' ? (
           <p className="text-center text-xs text-muted-foreground">Indisponível</p>
-        ) : podeUsarSwipe ? (
+        ) : podeAgir ? (
           <>
             {veiculos.length > 1 && acao !== 'inicial' && (
               <Select
