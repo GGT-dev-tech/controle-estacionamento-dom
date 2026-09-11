@@ -17,7 +17,7 @@ from app.schemas.admin import (
 )
 from app.schemas.cliente import ClienteCreate, ClienteRead
 from app.security.auth import require_role
-from app.services.whatsapp import normalizar_telefone
+from app.services.whatsapp import normalizar_telefone, enviar_mensagem
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -165,6 +165,14 @@ async def adicionar_cliente(
     db.add(cliente)
     await db.commit()
     await db.refresh(cliente)
+    
+    await enviar_mensagem(
+        telefone,
+        f"👋 Olá {payload.nome}! Você acaba de ser adicionado(a) ao sistema do Dom Estacionamento. "
+        "Seu número já está autorizado.\n\n"
+        "Envie */ajuda* aqui no WhatsApp a qualquer momento para ver os comandos disponíveis."
+    )
+    
     return cliente
 
 
