@@ -109,6 +109,45 @@ async def test_webhook_processa_comando_e_responde(client_as_admin, db_session, 
     assert "Comandos" in enviados[0][1]
 
 
+async def test_webhook_reconhece_cliente_quando_jid_vem_sem_o_nono_digito(
+    client_as_admin, db_session, monkeypatch
+):
+    """WhatsApp às vezes referencia um celular brasileiro sem o "nono dígito" no remoteJid
+    (formato antigo, DDD + 8 dígitos) mesmo quando a pessoa manda mensagem normalmente —
+    o cadastro sempre guarda com o nono dígito (DDD + 9 dígitos, como digitado no
+    formulário). Sem normalizar isso, um cliente cadastrado é tratado como desconhecido."""
+    from app.models.cliente import Cliente
+    from app.models.ocupante import TipoCliente
+    from app.routers import webhook_whatsapp
+
+    async with db_session() as db:
+        # Cadastro com o nono dígito (padrão do formulário): DDD 47 + 9 + 8 dígitos.
+        db.add(Cliente(nome="Jéssica Teste", telefone="47991190758", tipo_cliente=TipoCliente.rotativo))
+        await db.commit()
+
+    enviados = []
+
+    async def _fake_enviar_mensagem(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar_mensagem)
+
+    payload = {
+        "event": "messages.upsert",
+        "data": {
+            # remoteJid real capturado em produção: 55 + DDD 47 + 8 dígitos (sem o 9).
+            "key": {"remoteJid": "554791190758@s.whatsapp.net", "fromMe": False},
+            "message": {"conversation": "/ajuda"},
+        },
+    }
+
+    resp = await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=payload)
+    assert resp.status_code == 200
+    assert len(enviados) == 1
+    assert "Comandos" in enviados[0][1]
+
+
 async def test_webhook_aceita_tambem_o_formato_antigo_data_messages_lista(
     client_as_admin, db_session, monkeypatch
 ):

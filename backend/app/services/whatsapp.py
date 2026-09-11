@@ -29,18 +29,34 @@ def normalizar_telefone(bruto: str) -> str:
     """
     apenas_digitos = "".join(c for c in bruto.split("@")[0] if c.isdigit())
     if apenas_digitos.startswith("55") and len(apenas_digitos) in (12, 13):
-        return apenas_digitos[2:]
+        apenas_digitos = apenas_digitos[2:]
+
+    if len(apenas_digitos) == 10:
+        # Celular brasileiro sem o "nono dígito" — o WhatsApp às vezes referencia o
+        # número no formato antigo de 8 dígitos (DDD + 8), mesmo quando a pessoa manda
+        # mensagem normalmente. O cadastro sempre grava com o nono dígito (DDD + 9 dígitos,
+        # 11 no total, como digitado no formulário) — sem essa normalização, a busca por
+        # Cliente.telefone nunca bate e um cliente cadastrado é tratado como desconhecido.
+        apenas_digitos = apenas_digitos[:2] + "9" + apenas_digitos[2:]
+
     return apenas_digitos
 
 
 async def enviar_mensagem(telefone: str, texto: str) -> bool:
-    """telefone: apenas dígitos com DDD, ex: '11999998888'."""
+    """telefone: aceita tanto o formato sem código do país (ex.: '11999998888', como vem
+    do cadastro/reserva) quanto o remoteJid cru do webhook (ex.: '5511999998888', com país
+    e às vezes sem o nono dígito) — normaliza aqui, na borda de saída, antes de montar o
+    JID de destino. Sem isso, chamadas vindas do fluxo do bot (que carregam o telefone cru
+    do webhook adiante) duplicavam o "55" (`5555...`), gerando um número inválido e a
+    mensagem nunca saía — mesmo com o resto do fluxo funcionando perfeitamente.
+    """
     if not settings.evolution_api_url:
         logger.warning("Evolution API não configurada — mensagem não enviada.")
         return False
 
+    numero = normalizar_telefone(telefone)
     url = f"{settings.evolution_api_url}/message/sendText/{settings.evolution_instance_name}"
-    payload = {"number": f"55{telefone}@s.whatsapp.net", "text": texto}
+    payload = {"number": f"55{numero}@s.whatsapp.net", "text": texto}
     headers = {"apikey": settings.evolution_api_key, "Content-Type": "application/json"}
 
     async with httpx.AsyncClient(timeout=10.0) as client:
