@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Layout } from '@/components/Layout'
 import { useVagas, useCriarVaga, useExcluirVaga } from '@/hooks/useVagas'
+import { ANDARES } from '@/stores/useUiStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -179,7 +180,9 @@ function VagasSection() {
       <h3 className="mb-3 text-sm font-semibold">Gerenciar Vagas</h3>
       <form onSubmit={handleSubmit} className="mb-3 flex flex-wrap gap-2">
         <Input name="numero" placeholder="Ex: 49" required className="flex-1 min-w-[80px]" />
-        <Input name="andar" placeholder="Ex: S2" required className="flex-1 min-w-[80px]" />
+        <select name="andar" className="flex-1 min-w-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm">
+          {ANDARES.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+        </select>
         <select name="tipo" className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm">
           <option value="padrao">Padrão</option>
           <option value="presa">Presa</option>
