@@ -131,8 +131,8 @@ async def _reservar_vaga(vaga_id: str, telefone: str, db: AsyncSession) -> str:
         await aplicar_reserva(db, payload, f"whatsapp:{telefone}")
     except RecursoNaoEncontradoError:
         return f"❌ Vaga {vaga_id} não encontrada."
-    except ConflitoOperacaoError as e:
-        return f"❌ {e}"
+    except ConflitoOperacaoError:
+        return "Desculpe, essa vaga acabou de ser reservada por outra pessoa. Por favor, escolha outra."
     return f"✅ Vaga {vaga_id} reservada até {fim:%H:%M}. Envie */cancelar {vaga_id}* para desistir."
 
 

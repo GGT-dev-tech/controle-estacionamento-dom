@@ -22,7 +22,11 @@ class ConflitoOperacaoError(Exception):
 
 
 async def aplicar_entrada(db: AsyncSession, payload: EntradaCreate, operador_sub: str) -> Movimentacao:
-    vaga = await db.get(Vaga, payload.vaga_id)
+    # SELECT ... FOR UPDATE (portável entre PostgreSQL e MySQL/InnoDB): trava a linha da
+    # vaga até o commit, fechando a janela de corrida entre duas confirmações simultâneas.
+    vaga = (
+        await db.execute(select(Vaga).where(Vaga.id == payload.vaga_id).with_for_update())
+    ).scalar_one_or_none()
     if not vaga or not vaga.ativo:
         raise RecursoNaoEncontradoError("Vaga não encontrada.")
     if vaga.status not in (StatusVaga.livre, StatusVaga.reservada):
@@ -108,7 +112,11 @@ async def aplicar_saida(db: AsyncSession, vaga_id: str, operador_sub: str) -> Mo
 
 
 async def aplicar_reserva(db: AsyncSession, payload: ReservaCreate, operador_sub: str) -> Reserva:
-    vaga = await db.get(Vaga, payload.vaga_id)
+    # Mesmo lock de aplicar_entrada — sem isso, duas reservas concorrentes na mesma vaga
+    # (ex.: WhatsApp x operador) poderiam ambas passar pela checagem de status antes do commit.
+    vaga = (
+        await db.execute(select(Vaga).where(Vaga.id == payload.vaga_id).with_for_update())
+    ).scalar_one_or_none()
     if not vaga or not vaga.ativo:
         raise RecursoNaoEncontradoError("Vaga não encontrada.")
     if vaga.status != StatusVaga.livre:

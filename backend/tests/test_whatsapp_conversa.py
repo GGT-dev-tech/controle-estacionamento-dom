@@ -134,6 +134,39 @@ async def test_escolher_vaga_inexistente_durante_a_conversa_avisa_e_limpa_estado
     assert await obter_estado("5511999998888") is None
 
 
+async def test_segunda_tentativa_de_reserva_na_mesma_vaga_recebe_mensagem_de_conflito(
+    client_as_admin, db_session, monkeypatch
+):
+    from app.routers import webhook_whatsapp
+
+    await _criar_cliente(db_session, telefone="11999998888")
+    await _criar_cliente(db_session, telefone="11988887777")
+    await _criar_vaga(db_session, "S2-49")
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    # Dois clientes diferentes iniciam a conversa e escolhem a MESMA vaga.
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511988887777", "reservar"))
+
+    resp1 = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "S2-49")
+    )
+    resp2 = await client_as_admin.post(
+        "/webhook/whatsapp/segredo-correto", json=_payload("5511988887777", "S2-49")
+    )
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+    assert "reservada" in enviados[-2][1]
+    assert "reservada por outra pessoa" in enviados[-1][1]
+
+
 async def test_numero_nao_cadastrado_nao_ativa_fluxo_de_texto_livre(client_as_admin, monkeypatch):
     from app.routers import webhook_whatsapp
 
