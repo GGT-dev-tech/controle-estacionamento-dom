@@ -157,15 +157,17 @@ async def _apos_escolher_tempo(telefone: str, texto: str, estado: dict, db: Asyn
 
     from datetime import timedelta
     txt = texto.lower().strip()
+    import re
     duracao = None
     
-    if txt == "1" or txt == "15" or "15 minutos" in txt or "15min" in txt:
+    # Strict matching for options 1, 2, 3, 4 to avoid conflict with "1 hora" or "2 horas"
+    if txt == "1" or re.fullmatch(r"15\s*m(?:in(?:uto(?:s)?)?)?", txt):
         duracao = timedelta(minutes=15)
-    elif txt == "2" or txt == "30" or "30 minutos" in txt or "30min" in txt:
+    elif txt == "2" or re.fullmatch(r"30\s*m(?:in(?:uto(?:s)?)?)?", txt):
         duracao = timedelta(minutes=30)
-    elif txt == "3" or txt == "1" or "1 hora" in txt or "1h" in txt:
+    elif txt == "3" or re.fullmatch(r"1\s*h(?:ora(?:s)?)?", txt):
         duracao = timedelta(hours=1)
-    elif txt == "4" or txt == "2" or "2 horas" in txt or "2h" in txt:
+    elif txt == "4" or re.fullmatch(r"2\s*h(?:ora(?:s)?)?", txt):
         duracao = timedelta(hours=2)
     else:
         return "❌ Opção inválida. Responda com 1, 2, 3 ou 4 correspondente ao tempo desejado."

@@ -253,3 +253,35 @@ async def lembrar_reservas_proximas_do_vencimento(db: AsyncSession, janela_minut
         await db.refresh(reserva)
 
     return list(proximas)
+
+async def reset_diario(db: AsyncSession) -> int:
+    """Força todas as vagas reservadas/ocupadas para livre e expira as reservas,
+    ideal para rodar na madrugada garantindo um estado limpo para o dia seguinte."""
+    agora = datetime.utcnow()
+    
+    # 1. Expira todas as reservas ativas
+    ativas = (
+        await db.execute(select(Reserva).where(Reserva.status == "ativa"))
+    ).scalars().all()
+    
+    for reserva in ativas:
+        reserva.status = "expirada"
+        reserva.fim = agora
+        
+    # 2. Força todas as vagas (que não sejam manutenção) para livre
+    vagas = (
+        await db.execute(select(Vaga).where(Vaga.status.in_([StatusVaga.reservada, StatusVaga.ocupada])))
+    ).scalars().all()
+    
+    for vaga in vagas:
+        vaga.status = StatusVaga.livre
+        
+    # 3. Limpa ocupantes
+    ocupantes = (await db.execute(select(Ocupante))).scalars().all()
+    for ocupante in ocupantes:
+        await db.delete(ocupante)
+
+    await db.commit()
+    await invalidate_vagas_cache()
+    
+    return len(vagas)

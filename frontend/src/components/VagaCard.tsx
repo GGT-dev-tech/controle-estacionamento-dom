@@ -87,23 +87,15 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
 
       <div className="mt-auto space-y-2 pt-1">
         {vaga.status === 'ocupada' ? (
-          cadastro ? (
-            <SwipeToConfirm
-              label="Deslize para liberar"
-              confirmingLabel="Liberando…"
-              onConfirm={handleConfirmarLiberar}
-            />
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              disabled={liberar.isPending}
-              onClick={() => liberar.mutate(vaga.id)}
-            >
-              {liberar.isPending ? 'Liberando…' : 'Liberar vaga'}
-            </Button>
-          )
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={liberar.isPending}
+            onClick={() => liberar.mutate(vaga.id)}
+          >
+            {liberar.isPending ? 'Liberando…' : 'Liberar vaga'}
+          </Button>
         ) : vaga.status === 'manutencao' ? (
           <p className="text-center text-xs text-muted-foreground">Indisponível</p>
         ) : podeAgir ? (
@@ -123,11 +115,14 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
 
             {acao === 'inicial' && reservaEhMinha && (
               <>
-                <SwipeToConfirm
-                  label="Deslize para confirmar chegada"
-                  confirmingLabel="Confirmando…"
-                  onConfirm={handleConfirmarOcupar}
-                />
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={ocupar.isPending}
+                  onClick={handleConfirmarOcupar}
+                >
+                  {ocupar.isPending ? 'Confirmando…' : 'Confirmar chegada'}
+                </Button>
                 <button
                   type="button"
                   onClick={handleCancelarReserva}
@@ -139,7 +134,13 @@ export function VagaCard({ vaga }: { vaga: Vaga }) {
               </>
             )}
             {acao === 'inicial' && !reservaEhMinha && (
-              <SwipeToConfirm label="Deslize para continuar" onConfirm={() => setAcao('escolhendo')} />
+              <Button
+                size="sm"
+                className="w-full"
+                onClick={() => setAcao('escolhendo')}
+              >
+                Continuar
+              </Button>
             )}
 
             {acao === 'escolhendo' && (

@@ -118,3 +118,16 @@ async def lembrar_vencimento(
     for reserva in proximas:
         await notificar_reserva_proxima_do_vencimento(reserva)
     return {"lembretes_enviados": len(proximas)}
+
+@router.post("/reset-diario")
+async def resetar_diario(
+    db: AsyncSession = Depends(get_db),
+    x_cron_secret: str | None = Header(default=None, alias="X-Cron-Secret"),
+) -> dict:
+    """Zera as ocupações e reservas ativas (recomendado rodar às 03:00 da manhã)."""
+    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+        raise HTTPException(status_code=404)
+
+    from app.services.sync import reset_diario
+    vagas_liberadas = await reset_diario(db)
+    return {"vagas_resetadas": vagas_liberadas, "status": "ok"}
