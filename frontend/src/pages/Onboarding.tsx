@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAdicionarVeiculo, useCriarMeuCadastro } from '@/hooks/useCliente'
+import { forcarMaiusculas } from '@/lib/utils'
 
 export default function Onboarding({ onPular }: { onPular: () => void }) {
   const { user } = useAuth0()
@@ -57,7 +58,7 @@ export default function Onboarding({ onPular }: { onPular: () => void }) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label htmlFor="placa">Placa (opcional)</Label>
-              <Input id="placa" name="placa" className="uppercase" placeholder="ABC1234" />
+              <Input id="placa" name="placa" className="uppercase" placeholder="ABC1234" onChange={forcarMaiusculas} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="veiculo">Veículo</Label>

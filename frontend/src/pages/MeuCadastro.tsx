@@ -11,6 +11,7 @@ import {
   useRemoverVeiculo,
 } from '@/hooks/useCliente'
 import { useCancelarReserva, useReservas } from '@/hooks/useReservas'
+import { forcarMaiusculas } from '@/lib/utils'
 
 const STATUS_VARIANT: Record<string, 'livre' | 'reservada' | 'neutro'> = {
   ativa: 'reservada',
@@ -48,7 +49,13 @@ function DadosSection() {
       <form onSubmit={handleSubmit} className="space-y-3">
         <div className="space-y-1">
           <Label htmlFor="telefone">Telefone (WhatsApp)</Label>
-          <Input id="telefone" name="telefone" defaultValue={cadastro.telefone} required />
+          <Input
+            id="telefone"
+            name="telefone"
+            defaultValue={cadastro.telefone}
+            placeholder="11999998888"
+            required
+          />
         </div>
         <div className="space-y-1">
           <Label htmlFor="email">E-mail</Label>
@@ -89,7 +96,13 @@ function VeiculosSection() {
     <div className="rounded-lg border border-white/10 bg-card/40 backdrop-blur-xl shadow-glass p-4">
       <h3 className="mb-3 text-sm font-semibold">Meus veículos</h3>
       <form onSubmit={handleSubmit} className="mb-3 flex flex-wrap gap-2">
-        <Input name="placa" placeholder="ABC1234" required className="w-28 uppercase" />
+        <Input
+          name="placa"
+          placeholder="ABC1234"
+          required
+          className="w-28 uppercase"
+          onChange={forcarMaiusculas}
+        />
         <Input name="veiculo" placeholder="Fiat Argo 1.0" required className="flex-1 min-w-[140px]" />
         <Button type="submit" size="sm" disabled={adicionar.isPending}>
           Adicionar

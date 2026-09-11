@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { useOcuparVaga } from '@/hooks/useVagas'
 import type { TipoCliente } from '@/api/types'
+import { forcarMaiusculas } from '@/lib/utils'
 
 const TIPOS_CLIENTE: { value: TipoCliente; label: string }[] = [
   { value: 'mensalista', label: 'Mensalista' },
@@ -57,7 +58,14 @@ export function EntradaModal({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label htmlFor="placa">Placa</Label>
-              <Input id="placa" name="placa" required maxLength={10} className="uppercase" />
+              <Input
+                id="placa"
+                name="placa"
+                required
+                maxLength={10}
+                className="uppercase"
+                onChange={forcarMaiusculas}
+              />
             </div>
             <div className="space-y-1">
               <Label htmlFor="tipo_cliente">Tipo</Label>
