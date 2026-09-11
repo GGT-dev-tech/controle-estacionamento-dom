@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -78,9 +78,16 @@ async def test_reserva_com_datetime_timezone_aware_como_o_frontend_manda(client_
         },
     )
     assert resp.status_code == 201
+    corpo = resp.json()
+    # O valor é naive-mas-UTC no banco; a resposta precisa marcar isso explicitamente
+    # (offset "+00:00"), senão `new Date(...)` no navegador interpreta como horário
+    # local e exibe a hora errada (bug real de produção: "Reservada até 06:20" errado).
+    assert corpo["fim"].endswith("+00:00")
+    assert datetime.fromisoformat(corpo["fim"]) == fim.replace(tzinfo=timezone.utc)
 
     vaga = (await client_as_admin.get("/vagas/G2-13")).json()
     assert vaga["status"] == "reservada"
+    assert vaga["reserva_ativa"]["fim"].endswith("+00:00")
 
 
 async def test_reserva_com_fim_antes_do_inicio_e_invalida(client_as_admin):

@@ -1,8 +1,7 @@
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict
 
 from app.models.vaga import StatusVaga
+from app.schemas.common import UTCDatetime
 from app.schemas.ocupante import OcupanteRead
 from app.schemas.reserva import ReservaRead
 
@@ -32,7 +31,7 @@ class VagaRead(VagaBase):
     id: str
     status: StatusVaga
     ativo: bool
-    criado_em: datetime
+    criado_em: UTCDatetime
 
 
 class VagaComDetalhes(VagaRead):

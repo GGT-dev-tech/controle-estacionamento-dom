@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from app.schemas.common import UTCDatetime
+
 
 def _para_naive_utc(valor: datetime) -> datetime:
     """O frontend manda `Date.toISOString()` (ex.: 2026-09-11T04:39:36.000Z), que o
@@ -20,8 +22,8 @@ class ReservaBase(BaseModel):
     telefone: str | None = None
     email: str | None = None
     placa: str | None = None
-    inicio: datetime
-    fim: datetime
+    inicio: UTCDatetime
+    fim: UTCDatetime
 
     @field_validator("inicio")
     @classmethod
@@ -50,4 +52,4 @@ class ReservaRead(ReservaBase):
     vaga_id: str
     status: str
     canal: str
-    criado_em: datetime
+    criado_em: UTCDatetime

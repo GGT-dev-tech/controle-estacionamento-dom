@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict
+
+from app.schemas.common import UTCDatetime
 
 
 class DominioAutorizadoCreate(BaseModel):
@@ -12,7 +12,7 @@ class DominioAutorizadoRead(BaseModel):
 
     dominio: str
     ativo: bool
-    criado_em: datetime
+    criado_em: UTCDatetime
 
 
 class AdminEmailCreate(BaseModel):
@@ -23,7 +23,7 @@ class AdminEmailRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     email: str
-    criado_em: datetime
+    criado_em: UTCDatetime
 
 
 class AuditLogRead(BaseModel):
@@ -35,5 +35,5 @@ class AuditLogRead(BaseModel):
     recurso: str
     recurso_id: str | None
     ip: str | None
-    timestamp: datetime
+    timestamp: UTCDatetime
     detalhes: str | None

@@ -1,8 +1,7 @@
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict
 
 from app.models.ocupante import TipoCliente
+from app.schemas.common import UTCDatetime
 
 
 class EntradaCreate(BaseModel):
@@ -27,7 +26,7 @@ class MovimentacaoRead(BaseModel):
     placa: str
     motorista: str
     veiculo: str
-    timestamp: datetime
+    timestamp: UTCDatetime
     operador_id: str
     tempo_permanencia_min: int | None
     sincronizado: bool

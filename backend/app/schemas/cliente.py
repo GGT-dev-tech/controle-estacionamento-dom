@@ -1,8 +1,7 @@
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict
 
 from app.models.ocupante import TipoCliente
+from app.schemas.common import UTCDatetime
 
 
 class ClienteCreate(BaseModel):
@@ -19,7 +18,7 @@ class ClienteRead(BaseModel):
     telefone: str
     tipo_cliente: TipoCliente
     ativo: bool
-    criado_em: datetime
+    criado_em: UTCDatetime
 
 
 class VeiculoCreate(BaseModel):
@@ -33,7 +32,7 @@ class VeiculoRead(BaseModel):
     id: int
     placa: str
     veiculo: str
-    criado_em: datetime
+    criado_em: UTCDatetime
 
 
 class MeuCadastroCreate(BaseModel):
@@ -55,5 +54,5 @@ class MeuCadastroRead(BaseModel):
     email: str | None
     tipo_cliente: TipoCliente
     ativo: bool
-    criado_em: datetime
+    criado_em: UTCDatetime
     veiculos: list[VeiculoRead] = []

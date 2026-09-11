@@ -1,8 +1,7 @@
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict
 
 from app.models.ocupante import TipoCliente
+from app.schemas.common import UTCDatetime
 
 
 class OcupanteBase(BaseModel):
@@ -18,5 +17,5 @@ class OcupanteRead(OcupanteBase):
 
     id: int
     vaga_id: str
-    hora_entrada: datetime
+    hora_entrada: UTCDatetime
     operador_id: str
