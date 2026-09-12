@@ -83,3 +83,42 @@ async def test_ciclo_do_scheduler_expira_e_lembra_reservas_num_unico_passo(
     telefones_avisados = {telefone for telefone, _ in enviados}
     assert "11911112222" in telefones_avisados  # expiração
     assert "11933334444" in telefones_avisados  # lembrete
+
+
+async def test_ciclo_do_scheduler_dispara_reset_diario_quando_vira_o_dia(
+    client_as_admin, db_session, monkeypatch
+):
+    """O reset diário (zerar ocupações à meia-noite em Brasília) roda dentro do mesmo
+    ciclo do scheduler, antes de expirar/lembrar — precisa de um Redis (fake, aqui) pra
+    saber que ainda não rodou hoje."""
+    from app.models.vaga import StatusVaga
+    from app.services import scheduler, sync
+
+    monkeypatch.setattr(scheduler, "SessionLocal", db_session)
+
+    class _FakeRedis:
+        def __init__(self) -> None:
+            self._dados: dict[str, str] = {}
+
+        async def get(self, chave):
+            return self._dados.get(chave)
+
+        async def set(self, chave, valor, ex=None):
+            self._dados[chave] = valor
+
+    _fake_redis = _FakeRedis()
+    monkeypatch.setattr(sync, "get_redis", lambda: _fake_redis)
+
+    await _criar_vaga(client_as_admin, "G2-95")
+
+    async with db_session() as session:
+        from app.models.vaga import Vaga
+
+        vaga = await session.get(Vaga, "G2-95")
+        vaga.status = StatusVaga.ocupada
+        await session.commit()
+
+    await scheduler._executar_ciclo()
+
+    vaga_depois = (await client_as_admin.get("/vagas/G2-95")).json()
+    assert vaga_depois["status"] == "livre"

@@ -4,12 +4,21 @@ import logging
 from app.config import settings
 from app.database import SessionLocal
 from app.services.notificacoes import notificar_reserva_expirada, notificar_reserva_proxima_do_vencimento
-from app.services.sync import expirar_reservas_vencidas, lembrar_reservas_proximas_do_vencimento
+from app.services.sync import (
+    expirar_reservas_vencidas,
+    lembrar_reservas_proximas_do_vencimento,
+    resetar_diario_se_virou_o_dia,
+)
 
 logger = logging.getLogger(__name__)
 
 
 async def _executar_ciclo() -> None:
+    async with SessionLocal() as db:
+        vagas_resetadas = await resetar_diario_se_virou_o_dia(db)
+    if vagas_resetadas is not None:
+        logger.info("Reset diário (meia-noite) executado — %d vaga(s) liberada(s).", vagas_resetadas)
+
     async with SessionLocal() as db:
         expiradas = await expirar_reservas_vencidas(db)
     for reserva in expiradas:

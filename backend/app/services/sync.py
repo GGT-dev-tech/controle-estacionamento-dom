@@ -1,5 +1,7 @@
+import logging
 from datetime import datetime, timedelta
 
+from redis import RedisError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,8 +14,11 @@ from app.models.veiculo import Veiculo
 from app.schemas.movimentacao import EntradaCreate
 from app.schemas.reserva import ReservaCreate
 from app.security.audit import registrar_auditoria
-from app.services.redis_cache import invalidate_vagas_cache
+from app.services.horario import FUSO_BR
+from app.services.redis_cache import get_redis, invalidate_vagas_cache
 from app.services.ws_manager import notificar_vaga_atualizada
+
+logger = logging.getLogger(__name__)
 
 
 class RecursoNaoEncontradoError(Exception):
@@ -382,5 +387,39 @@ async def reset_diario(db: AsyncSession) -> int:
 
     await db.commit()
     await invalidate_vagas_cache()
-    
+
     return len(vagas)
+
+
+_RESET_DIARIO_REDIS_KEY = "reset-diario:ultima-data"
+
+
+async def resetar_diario_se_virou_o_dia(db: AsyncSession) -> int | None:
+    """Chamado a cada ciclo do scheduler (services/scheduler.py): dispara reset_diario()
+    sozinho, sem depender de um Cron Job externo, assim que vira a meia-noite em Brasília
+    (não UTC — "meia-noite" pro cliente é meia-noite local). Guarda a data do último reset
+    no Redis pra não repetir a cada ciclo (o loop roda a cada poucos segundos).
+
+    Ao contrário do cache de vagas (fail-open), aqui SEM Redis o reset é pulado neste
+    ciclo em vez de rodar de qualquer jeito: sem a marcação de "já rodou hoje", cada novo
+    ciclo (a cada poucos segundos, o dia inteiro) repetiria o reset — muito pior do que só
+    não resetar automaticamente enquanto o Redis estiver fora do ar (o endpoint manual
+    POST /reservas/reset-diario continua disponível como alternativa nesse meio-tempo)."""
+    hoje = datetime.now(FUSO_BR).date().isoformat()
+    try:
+        ultima_data = await get_redis().get(_RESET_DIARIO_REDIS_KEY)
+    except RedisError:
+        logger.warning("Redis indisponível ao checar a data do último reset diário — pulando este ciclo.")
+        return None
+
+    if ultima_data == hoje:
+        return None
+
+    vagas_liberadas = await reset_diario(db)
+
+    try:
+        await get_redis().set(_RESET_DIARIO_REDIS_KEY, hoje)
+    except RedisError:
+        logger.warning("Redis indisponível ao gravar a data do reset diário — pode repetir no próximo ciclo.")
+
+    return vagas_liberadas
