@@ -796,3 +796,40 @@ async def test_conflito_de_concorrencia_na_reserva_mostra_lista_atualizada(
     reservas_50 = (await client_as_admin.get("/reservas", params={"vaga_id": "S2-50"})).json()
     assert len(reservas_50) == 1
     assert reservas_50[0]["telefone"] == "11922220000"
+
+
+async def test_mensagem_de_reserva_confirmada_mostra_horario_de_brasilia_nao_utc(
+    client_as_admin, db_session, monkeypatch
+):
+    """Bug real reportado: a mensagem de confirmação mostrava a hora UTC crua (3h à
+    frente da hora de Brasília) em vez de converter — ex.: reserva feita "as 14h" (BRT)
+    aparecia como "até 18h" numa reserva de 2h. Trava a hora "atual" pra testar a
+    conversão de forma determinística."""
+    from app.routers import webhook_whatsapp
+    from app.services import whatsapp as whatsapp_service
+
+    await _criar_cliente(db_session)
+    await _criar_vaga(db_session, "S2-49")
+
+    class _DatetimeFixo(datetime):
+        @classmethod
+        def utcnow(cls):
+            return datetime(2026, 1, 15, 18, 0, 0)  # 18:00 UTC == 15:00 em Brasília
+
+    monkeypatch.setattr(whatsapp_service, "datetime", _DatetimeFixo)
+
+    enviados = []
+
+    async def _fake_enviar(telefone, texto):
+        enviados.append((telefone, texto))
+        return True
+
+    monkeypatch.setattr(webhook_whatsapp, "enviar_mensagem", _fake_enviar)
+
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "reservar"))
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "S2-49"))
+    # Opção "4" = 2 horas => fim = 18:00 UTC + 2h = 20:00 UTC = 17:00 em Brasília.
+    await client_as_admin.post("/webhook/whatsapp/segredo-correto", json=_payload("5511999998888", "4"))
+
+    assert "até 17:00" in enviados[-1][1]
+    assert "até 20:00" not in enviados[-1][1]

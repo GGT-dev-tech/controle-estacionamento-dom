@@ -1,5 +1,6 @@
 from app.models.reserva import Reserva
 from app.services.email import enviar_cancelamento_reserva, enviar_confirmacao_reserva
+from app.services.horario import horario_br
 from app.services.whatsapp import enviar_mensagem
 from app.services.whatsapp_estado import definir_estado
 
@@ -8,8 +9,10 @@ def _reserva_para_dict(reserva: Reserva) -> dict:
     return {
         "nome": reserva.nome,
         "vaga_id": reserva.vaga_id,
-        "inicio": reserva.inicio,
-        "fim": reserva.fim,
+        # Convertido pra horário de Brasília aqui, na borda — os templates de e-mail só
+        # formatam o que recebem, sem saber (nem precisar saber) que o valor no banco é UTC.
+        "inicio": horario_br(reserva.inicio),
+        "fim": horario_br(reserva.fim),
         "placa": reserva.placa,
         "email": reserva.email,
     }
@@ -23,7 +26,8 @@ async def notificar_reserva_criada(reserva: Reserva) -> None:
         await enviar_confirmacao_reserva(_reserva_para_dict(reserva))
     if reserva.telefone:
         await enviar_mensagem(
-            reserva.telefone, f"✅ Reserva confirmada — vaga {reserva.vaga_id}, até {reserva.fim:%d/%m %H:%M}."
+            reserva.telefone,
+            f"✅ Reserva confirmada — vaga {reserva.vaga_id}, até {horario_br(reserva.fim):%d/%m %H:%M}.",
         )
 
 
@@ -59,7 +63,7 @@ async def notificar_reserva_proxima_do_vencimento(reserva: Reserva) -> None:
         return
     await enviar_mensagem(
         reserva.telefone,
-        f"⏰ Sua reserva da vaga {reserva.vaga_id} vence às {reserva.fim:%H:%M}. Ainda vem? "
+        f"⏰ Sua reserva da vaga {reserva.vaga_id} vence às {horario_br(reserva.fim):%H:%M}. Ainda vem? "
         "Responda *sim* para garantir mais um tempo. Sem resposta, a vaga é liberada normalmente "
         "no vencimento.",
     )

@@ -15,6 +15,7 @@ from app.models.vaga import StatusVaga, Vaga
 from app.models.veiculo import Veiculo
 from app.schemas.movimentacao import EntradaCreate
 from app.schemas.reserva import ReservaCreate
+from app.services.horario import horario_br
 from app.services.sync import (
     ConflitoOperacaoError,
     PermissaoNegadaError,
@@ -441,7 +442,7 @@ async def _reservar_vaga(
             "😕 Essa vaga acabou de ser reservada por outra pessoa. Aqui está a lista atualizada:\n\n"
             + _texto_lista_vagas(vaga_ids, "reservar")
         )
-    return f"✅ Vaga {vaga_id} reservada até {fim:%H:%M}. Envie */cancelar {vaga_id}* para desistir."
+    return f"✅ Vaga {vaga_id} reservada até {horario_br(fim):%H:%M}. Envie */cancelar {vaga_id}* para desistir."
 
 
 async def _ocupar_vaga(vaga_id: str, telefone: str, db: AsyncSession, placa_escolhida: str) -> str:
@@ -501,7 +502,7 @@ async def _confirmar_extensao_reserva(
         reserva.fim = reserva.fim + duracao_original
         reserva.lembrete_enviado = False
         await db.commit()
-        return f"✅ Reserva da vaga {reserva.vaga_id} estendida até {reserva.fim:%H:%M}."
+        return f"✅ Reserva da vaga {reserva.vaga_id} estendida até {horario_br(reserva.fim):%H:%M}."
 
     return "Tudo bem — se não chegar até o horário combinado, a vaga é liberada automaticamente."
 
@@ -529,7 +530,7 @@ async def _status_placa(placa: str, db: AsyncSession) -> str:
     ocupante = (await db.execute(select(Ocupante).where(Ocupante.placa == placa))).scalar_one_or_none()
     if not ocupante:
         return f"🔎 Nenhum veículo com placa {placa} está estacionado no momento."
-    return f"🚗 {placa} está na vaga {ocupante.vaga_id} desde {ocupante.hora_entrada:%H:%M}."
+    return f"🚗 {placa} está na vaga {ocupante.vaga_id} desde {horario_br(ocupante.hora_entrada):%H:%M}."
 
 
 def _ajuda() -> str:
